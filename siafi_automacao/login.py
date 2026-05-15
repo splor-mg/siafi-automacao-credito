@@ -6,8 +6,11 @@ from datetime import datetime
 import pandas as pd
 import openpyxl
 import time
-from fluxo_anular import anular
-from fluxo_aprovar import aprovar
+from fluxo_tipo_1 import tipo_1
+from fluxo_tipo_2 import tipo_2
+from fluxo_tipo_3 import tipo_3
+from fluxo_tipo_4 import tipo_4
+
 
 load_dotenv()
 sistema = os.getenv('SISTEMA')
@@ -15,35 +18,15 @@ usuario = os.getenv('USUARIO')
 senha = os.getenv('SENHA')
 unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 
+day = datetime.today().strftime("%d")
 month = datetime.today().strftime("%m")
+year = datetime.today().strftime("%Y")
 
-# Definição dos CAMINHOS
-# Caminho original no OneDrive — apenas leitura, nunca será modificado
-CAMINHO_ONEDRIVE  = '/mnt/c/Users/x70167581686/OneDrive - CAMG/General/@dcmefo/2026/Robo - Remanejamento e aprovacao de cota/Robo (IPU 2)/copia.xlsx'
-
-# Cópia local de trabalho — onde o robô vai ler e salvar durante a execução... ele é criado a partir do original do OneDrive e só é salvo no final, para evitar conflitos de acesso com o OneDrive
-CAMINHO_LOCAL     = '/home/guilhermemelof/code/splor-mg/siafi-automacao/data/copia.xlsx'
-
-# Destino final no OneDrive — arquivo de conferência gerado ao final
-CAMINHO_DESTINO   = '/mnt/c/Users/x70167581686/OneDrive - CAMG/General/@dcmefo/2026/Robo - Remanejamento e aprovacao de cota/Conferencia arquivo robo/Conferencia arquivo robo.xlsx'
+# Caminho da planilha a ser executada
+CAMINHO_LOCAL     = '/home/guilhermemelof/code/splor-mg/siafi-automacao-credito/data/copia.xlsm'
 
 #Nome da aba na planilha Excel onde estão os dados a serem processados
-SHEET_NAME = 'Remanejamento Cota Orçamentaria'
-
-# -----------------------------------------------------------------------
-# ETAPA 1: copia o original do OneDrive para o caminho local de trabalho.
-# O OneDrive não será mais tocado até o final do processamento.
-# A pasta local é criada automaticamente se não existir.
-# -----------------------------------------------------------------------
-os.makedirs(os.path.dirname(CAMINHO_LOCAL), exist_ok=True)
-shutil.copy2(CAMINHO_ONEDRIVE, CAMINHO_LOCAL)
-print(f"Arquivo copiado para trabalho local: {CAMINHO_LOCAL}")
-
-# -----------------------------------------------------------------------
-# ETAPA 2: garante que a pasta de destino no OneDrive existe.
-# Se a pasta "Conferencia arquivo robo" ainda não foi criada, ela é criada aqui.
-# -----------------------------------------------------------------------
-os.makedirs(os.path.dirname(CAMINHO_DESTINO), exist_ok=True)
+SHEET_NAME = 'ROBO'
 
 em = Emulator(visible=True) ##caso queira que a tela apareça utilize visible=True
 em.connect('bhmvsb.prodemge.gov.br')
@@ -125,112 +108,90 @@ em.send_enter()
 em.wait_for_field()
 # Fim do login
 
-#Entrar em 03 - Movimentacao Orcamentaria
-em.fill_field(21, 19, '03', 2)
-em.send_enter()
-em.wait_for_field()
-
-#Entrar em 02 - Aprovacao de Cota Orcamentaria
-em.fill_field(21, 19, '02', 2)
-em.send_enter()
-em.wait_for_field()
-
-# Leitura da planilha e processamento dos dados
-
-# -----------------------------------------------------------------------
-# ETAPA 3: leitura da cópia LOCAL (não do OneDrive)
-# -----------------------------------------------------------------------
+# Leitura da Planilha
 df = pd.read_excel(CAMINHO_LOCAL, sheet_name=SHEET_NAME)
 df = df.dropna(how='all')  # remove linhas completamente vazias
-df = df.sort_values(by=['Anular', 'UO_COD'], ascending=[True, True]) # ordena por anulação e depois por UO
+df = df.sort_values(by=['TIPO', 'UO_COD', 'ORIENTACAO'], ascending=[True, True, False]) # ordena por anulação e depois por UO
 df = df.reset_index(drop=False)
 
-# Garante que a coluna 'Progresso' existe no DataFrame.
-# Se a planilha já tiver a coluna de uma execução anterior, ela é mantida.
-# Se não tiver, é criada vazia para receber os retornos desta execução.
-df['Progresso'] = df['Progresso'].astype(str) if 'Progresso' in df.columns else ''
-df['Progresso'] = df['Progresso'].astype(object)
+# Definição de variáveis para controle do fluxo
+verifica_tipo = 0
+conclusao = 0
 
-# O loop agora usa "for idx, row" em vez de "for _, row".
-# O idx é o índice real da linha no DataFrame e é necessário para que o
-# df.at[idx, 'Progresso'] grave o retorno na linha correta em memória.
+# Loop para processar cada linha da planilha
 for idx, row in df.iterrows():
     data_row = {}
     data_row['month']   = month
-    data_row['uo']      = str(int(row['UO_COD']))
-    data_row['grupo']   = str(int(row['Grupo']))
-    data_row['iag']     = str(int(row['IAG']))
-    data_row['fonte']   = str(int(row['Fonte']))
-    data_row['procedencia'] = str(int(row['IPU']))
-    data_row['acao'] = str(int(row['Ação']))
-    data_row['tipo_global'] = row['GLOBAL'] if pd.notna(row['GLOBAL']) else '0'
-    data_row['tipo_amarrado'] = str(int(row['AMARRADO'])) if pd.notna(row['AMARRADO']) else '0'
-    data_row['uo_financiadora'] = str(int(row['UO Financiadora'])) if pd.notna(row['UO Financiadora']) else '0'
-    if pd.notna(row['AMARRADO']):
-        amarrado = str(int(row['AMARRADO']))
-        data_row['elemento'] = amarrado[:2]   # dois primeiros digitos
-        data_row['item'] = amarrado[2:]       # dois ultimos digitos
-    else:
-        data_row['elemento'] = '0'
-        data_row['item'] = '0'
-    data_row['valor_anulacao'] = int(round(float(row['Anular']), 2) * 100) if pd.notna(row['Anular']) else 0
-    data_row['valor_aprovacao'] = int(round(float(row['Aprovar']), 2) * 100) if pd.notna(row['Aprovar']) else 0
-     
-    ##Definição do valor a ser preenchido, dependendo se é anulação ou aprovação
-    if pd.notna(row['Anular']):
-        data_row['valor'] = int(round(float(row['Anular']), 2) * 100)
-    else:
-        data_row['valor'] = int(round(float(row['Aprovar']), 2) * 100)
+    data_row['day']     = day
+    data_row['year']    = year
+    data_row['orientacao']    = str(row['ORIENTACAO']).strip()
+    data_row['uo']            = str(int(row['UO_COD']))
+    data_row['acao']          = str(int(row['ACAO_COD']))
+    data_row['funcao']        = str(int(row['FUNCAO_COD']))
+    data_row['subfuncao']     = str(int(row['SUBFUNCAO_COD']))
+    data_row['programa']      = str(int(row['PROGRAMA_COD']))
+    data_row['subprojeto']    = str(int(row['SUBPROJETO_COD']))
+    data_row['categoria']     = str(int(row['CATEGORIA_COD']))
+    data_row['grupo']         = str(int(row['GRUPO_COD']))
+    data_row['modalidade']    = str(int(row['MODALIDADE_COD']))
+    data_row['elemento']      = str(int(row['ELEMENTO_COD']))
+    data_row['iag']           = str(int(row['IPG_COD']))
+    data_row['fonte']         = str(int(row['FONTE_COD']))
+    data_row['procedencia']   = str(int(row['IPU_COD']))
 
-    # 'retorno' é inicializado vazio antes de cada linha para evitar que,
-    # em caso de erro inesperado, o retorno de uma linha anterior seja
-    # gravado incorretamente na linha atual.
+    if data_row['orientacao'] == 'Anular': # se for anulação, o valor deve ser multiplicado por -1 para ficar negativo
+        data_row['valor']      = str(-int(row['VALOR']))
+    else:
+         data_row['valor']      = str(int(row['VALOR']))
+
+    data_row['uo_suplementada'] = str(int(row['UO_SUPLEMENTADA'])) if pd.notna(row['UO_SUPLEMENTADA']) else '0'
+    data_row['tipo']          = str(int(row['TIPO']))
+
     retorno = ''
 
-    if data_row['valor_anulacao'] != 0:
-        print(f"realizando procedimento de anulação")
-    elif data_row['valor_aprovacao'] != 0:
-        print(f"realizando procedimento de aprovação")
-            
-    if data_row['tipo_global'] == 'x':
-        print(f"Processando UO: {data_row['uo']}, Grupo: {data_row['grupo']}, Acao: {data_row['acao']}, Fonte: {data_row['fonte']}, Procedencia: {data_row['procedencia']}, Valor: {data_row['valor']}")
-    elif data_row['tipo_amarrado'] != '0':
-        print(f"Processando UO: {data_row['uo']}, Grupo: {data_row['grupo']}, Acao: {data_row['acao']}, Fonte: {data_row['fonte']}, Procedencia: {data_row['procedencia']}, Valor: {data_row['valor']}")
+    ## Definição de variável para controle do fluxo.
+    if verifica_tipo != data_row['tipo']:
+        uo_anterior = 0
+        linha = 11
+        orientacao_anterior = "Suplementar"
+        conclusao = 1 if verifica_tipo != 0 else 0
 
-    # -------------------- exemplo para orquestrar o fluxo --------------------
-    # aqui você pode inspecionar o data_row e decidir se é anulação ou aprovação, global ou amarrado, e então chamar as funções correspondentes
+    if data_row['tipo'] == '1':
+        retorno, linha, conclusao = tipo_1(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
+    elif data_row['tipo'] == '2':
+        retorno, linha, conclusao = tipo_2(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
+    elif data_row['tipo'] == '3':
+        retorno, linha, conclusao = tipo_3(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
+    elif data_row['tipo'] == '4':
+        retorno, linha, conclusao = tipo_4(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
 
-    if data_row['valor_anulacao'] != 0:
-        retorno = anular(em, data_row)
-    elif data_row['valor_aprovacao'] != 0:
-        retorno = aprovar(em, data_row)
+    uo_anterior = data_row['uo']  # armazena a UO da linha atual para comparação na próxima iteração
+    orientacao_anterior = data_row['orientacao']  # armazena a orientação da linha atual para comparação na próxima iteração
+    verifica_tipo = data_row['tipo']  # armazena a orientação da linha atual para comparação na próxima iteração
 
-    # Grava o retorno do SIAFI na coluna 'Progresso' do DataFrame em memória,
-    # na linha correspondente (idx). Nenhum arquivo é aberto ou salvo aqui —
-    # tudo fica em RAM até o fim do loop, evitando conflitos com o OneDrive.
-    df.at[idx, 'Progresso'] = retorno
-    print(f"Progresso gravado em memória — linha {idx}: {retorno}")
+##    if data_row['tipo'] == '999':
+##        break
 
-print('Fluxo finalizado — salvando planilha...')
+### Conclui última linha processada, aguardando mensagem de sucesso e pegando o número do documento
+if linha == 21:
+    em.send_pf(8)  # envia F8 para ir para a próxima página
+    em.wait_for_field()
 
-# -----------------------------------------------------------------------
-# ETAPA 4: salva o DataFrame processado na cópia local.
-# O arquivo local recebe todos os dados incluindo a coluna Progresso.
-# - mode='a'                  → abre a planilha existente sem apagar outras abas
-# - if_sheet_exists='overlay' → sobrescreve apenas a aba alvo
-# - index=False               → não grava o índice do DataFrame como coluna
-# -----------------------------------------------------------------------
-with pd.ExcelWriter(CAMINHO_LOCAL, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-    df.to_excel(writer, sheet_name=SHEET_NAME, index=False)
+em.send_enter()
+time.sleep(3)
+em.fill_field(11, 11, 'Remanejamento realizado conforme solicitado', 60) # ação
+em.send_enter()
+em.wait_for_field()
+em.send_pf(5)  # envia F5
+em.wait_for_field()
+em.send_pf(5)  # envia F5
+em.wait_for_field()
+time.sleep(1)
+retorno = em.string_get(1, 1, 80).strip()
+nr_doc = em.string_get(6, 39, 7).strip()
+print(f"SIAFI retornou: {retorno} - Nº do documento: {nr_doc}")
 
-print(f"Planilha salva localmente: {CAMINHO_LOCAL}")
-
-# -----------------------------------------------------------------------
-# ETAPA 5: copia o arquivo local processado para o destino no OneDrive,
-# já com o novo nome "Conferencia arquivo robo.xlsx".
-# O original em "Robo (IPU 2)/copia.xlsx" permanece intacto.
-# -----------------------------------------------------------------------
-shutil.copy2(CAMINHO_LOCAL, CAMINHO_DESTINO)
-print(f"Arquivo de conferência salvo no OneDrive: {CAMINHO_DESTINO}")
+print()
+print(f"Fluxo concluído.")
 
 em.terminate()

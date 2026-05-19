@@ -1,4 +1,5 @@
 import time
+from utils_siafi import finalizar_documento
 
 def tipo_1(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
     ## Verifica se é anulação ou aprovação e preencche 03-1 para aprovação e 04-1 para anulação
@@ -13,32 +14,8 @@ def tipo_1(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
                 conclusao = 1
 
             if conclusao == 1:
-                if linha == 21:
-                    em.send_pf(8)  # envia F8 para ir para a próxima página
-                    em.wait_for_field()
+                retorno, nr_doc = finalizar_documento(em, data_row['uo'])
 
-                em.send_enter()
-                time.sleep(3)
-                em.fill_field(11, 11, 'Remanejamento realizado conforme solicitado', 60) # ação
-                em.send_enter()
-                em.wait_for_field()
-                em.send_pf(5)  # envia F5
-                em.wait_for_field()
-                em.send_pf(5)  # envia F5
-                em.wait_for_field()
-                time.sleep(1)
-                retorno = em.string_get(1, 1, 80).strip()
-                nr_doc = em.string_get(6, 39, 7).strip()
-                print(f"SIAFI retornou: {retorno} - Nº do documento: {nr_doc}")
-
-                em.send_pf(3)  # envia F3
-                em.wait_for_field()
-                em.send_pf(3)  # envia F3
-                em.wait_for_field()
-                em.send_pf(3)  # envia F3
-                em.wait_for_field()
-
-            
             ### Abrir UO
             em.fill_field(21, 19, '10', 2)
             em.send_enter()
@@ -145,6 +122,10 @@ def tipo_1(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
 
 
         linha += 1
+
+        if linha == 21:
+            em.send_pf(8)  # envia F8 para ir para a próxima página
+            em.wait_for_field()
         
         break
 

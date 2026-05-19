@@ -10,6 +10,7 @@ from fluxo_tipo_1 import tipo_1
 from fluxo_tipo_2 import tipo_2
 from fluxo_tipo_3 import tipo_3
 from fluxo_tipo_4 import tipo_4
+from utils_siafi import finalizar_documento
 
 
 load_dotenv()
@@ -151,10 +152,14 @@ for idx, row in df.iterrows():
 
     ## Definição de variável para controle do fluxo.
     if verifica_tipo != data_row['tipo']:
+        ## finaliza o processo anterior, aguardando mensagem de sucesso e pegando o número do documento
+        if verifica_tipo != 0:
+            retorno, nr_doc = finalizar_documento(em, data_row['uo'])
+
         uo_anterior = 0
         linha = 11
         orientacao_anterior = "Suplementar"
-        conclusao = 1 if verifica_tipo != 0 else 0
+        conclusao = 0
 
     if data_row['tipo'] == '1':
         retorno, linha, conclusao = tipo_1(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
@@ -177,19 +182,7 @@ if linha == 21:
     em.send_pf(8)  # envia F8 para ir para a próxima página
     em.wait_for_field()
 
-em.send_enter()
-time.sleep(3)
-em.fill_field(11, 11, 'Remanejamento realizado conforme solicitado', 60) # ação
-em.send_enter()
-em.wait_for_field()
-em.send_pf(5)  # envia F5
-em.wait_for_field()
-em.send_pf(5)  # envia F5
-em.wait_for_field()
-time.sleep(1)
-retorno = em.string_get(1, 1, 80).strip()
-nr_doc = em.string_get(6, 39, 7).strip()
-print(f"SIAFI retornou: {retorno} - Nº do documento: {nr_doc}")
+retorno, nr_doc = finalizar_documento(em, data_row['uo'])
 
 print()
 print(f"Fluxo concluído.")

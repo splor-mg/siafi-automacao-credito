@@ -6,15 +6,17 @@ def tipo_2(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
     retorno = ''
 
     while True:
-  
+
         if uo_anterior != data_row['uo']:
+            linha = 11
             print("Realizando procedimento Tipo 2")
 
             if uo_anterior != 0:
                 conclusao = 1
 
             if conclusao == 1:
-                retorno, nr_doc = finalizar_documento(em, data_row['uo'])
+                retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior)
+
 
             ### Abrir UO
             em.fill_field(21, 19, '10', 2)

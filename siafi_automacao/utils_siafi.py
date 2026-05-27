@@ -1,7 +1,7 @@
 import time
 
 
-def finalizar_documento(em, uo):
+def finalizar_documento(em, uo, uo_anterior):
     em.send_enter()
     em.wait_for_field()
     time.sleep(3)
@@ -18,7 +18,7 @@ def finalizar_documento(em, uo):
 
     retorno = em.string_get(1, 1, 80).strip()
     nr_doc = em.string_get(6, 39, 7).strip()
-    print(f"SIAFI retornou: {retorno}: UO {uo} - Nº do documento: {nr_doc}")
+    print(f"SIAFI retornou: {retorno}: UO {uo_anterior} - Nº do documento: {nr_doc}")
 
     em.send_pf(3)
     em.wait_for_field()

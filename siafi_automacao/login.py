@@ -47,7 +47,7 @@ while tentativas < max_tentativas:
     time.sleep(1)
 
     try:
-        em.wait_for_field()
+        em.send_enter()
 
         # Tela COM campo editável — verifica se é a tela de sucesso
         if em.string_found(1, 13, 'Logon executado com sucesso'):
@@ -80,7 +80,7 @@ while tentativas < max_tentativas:
     time.sleep(1)
 
     try:
-        em.wait_for_field()
+        em.send_enter()
 
         # Tela COM campo editável — verifica se é a tela de sucesso
         if em.string_found(22, 11, 'Unidade Executora'):
@@ -121,6 +121,12 @@ conclusao = 0
 
 # Loop para processar cada linha da planilha
 for idx, row in df.iterrows():
+
+        # Pula linhas onde UO_COD está vazio (fim da planilha ou linha vazia)
+    if pd.isna(row['UO_COD']):
+        continue
+
+        
     data_row = {}
     data_row['month']   = month
     data_row['day']     = day
@@ -154,7 +160,7 @@ for idx, row in df.iterrows():
     if verifica_tipo != data_row['tipo']:
         ## finaliza o processo anterior, aguardando mensagem de sucesso e pegando o número do documento
         if verifica_tipo != 0:
-            retorno, nr_doc = finalizar_documento(em, data_row['uo'])
+            retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior)
 
         uo_anterior = 0
         linha = 11
@@ -182,7 +188,7 @@ if linha == 21:
     em.send_pf(8)  # envia F8 para ir para a próxima página
     em.wait_for_field()
 
-retorno, nr_doc = finalizar_documento(em, data_row['uo'])
+retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior)
 
 print()
 print(f"Fluxo concluído.")

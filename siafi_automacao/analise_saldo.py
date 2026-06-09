@@ -37,10 +37,10 @@ max_tentativas = 10
 tentativas = 0
 
 while tentativas < max_tentativas:
-    em.send_enter()
+    time.sleep(1)
 
     try:
-        em.wait_for_field()
+        em.send_enter()
 
         if em.string_found(1, 13, 'Logon executado com sucesso'):
             print("Login realizado com sucesso!")

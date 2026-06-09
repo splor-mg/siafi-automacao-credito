@@ -12,6 +12,10 @@ from fluxo_tipo_3 import tipo_3
 from fluxo_tipo_4 import tipo_4
 from utils_siafi import finalizar_documento
 
+agora = datetime.now()
+
+hora_atual = datetime.now().strftime("%H:%M:%S")
+print(f'Inicio do processo: {hora_atual}')
 
 load_dotenv()
 sistema = os.getenv('SISTEMA')
@@ -134,22 +138,22 @@ for idx, row in df.iterrows():
     data_row['orientacao']    = str(row['ORIENTACAO']).strip()
     data_row['uo']            = str(int(row['UO_COD']))
     data_row['acao']          = str(int(row['ACAO_COD']))
-    data_row['funcao']        = str(int(row['FUNCAO_COD']))
-    data_row['subfuncao']     = str(int(row['SUBFUNCAO_COD']))
-    data_row['programa']      = str(int(row['PROGRAMA_COD']))
+    data_row['funcao']        = str(int(row['FUNCAO_COD'])).zfill(2) 
+    data_row['subfuncao']     = str(int(row['SUBFUNCAO_COD'])).zfill(3) 
+    data_row['programa']      = str(int(row['PROGRAMA_COD'])).zfill(3) 
     data_row['subprojeto']    = str(int(row['SUBPROJETO_COD']))
     data_row['categoria']     = str(int(row['CATEGORIA_COD']))
     data_row['grupo']         = str(int(row['GRUPO_COD']))
     data_row['modalidade']    = str(int(row['MODALIDADE_COD']))
-    data_row['elemento']      = str(int(row['ELEMENTO_COD']))
+    data_row['elemento']      = str(int(row['ELEMENTO_COD'])).zfill(2) 
     data_row['iag']           = str(int(row['IPG_COD']))
-    data_row['fonte']         = str(int(row['FONTE_COD']))
+    data_row['fonte']         = str(int(row['FONTE_COD'])).zfill(2) 
     data_row['procedencia']   = str(int(row['IPU_COD']))
 
     if data_row['orientacao'] == 'Anular': # se for anulação, o valor deve ser multiplicado por -1 para ficar negativo
-        data_row['valor']      = str(-int(row['VALOR']))
+        data_row['valor']      = str(-int(round(row['VALOR'])))
     else:
-         data_row['valor']      = str(int(row['VALOR']))
+        data_row['valor']      = str(int(round(row['VALOR'])))
 
     data_row['uo_suplementada'] = str(int(row['UO_SUPLEMENTADA'])) if pd.notna(row['UO_SUPLEMENTADA']) else '0'
     data_row['tipo']          = str(int(row['TIPO']))
@@ -190,7 +194,11 @@ if linha == 21:
 
 retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior)
 
+
 print()
 print(f"Fluxo concluído.")
+
+hora_atual = datetime.now().strftime("%H:%M:%S")
+print(f'Fim do processo: {hora_atual}')
 
 em.terminate()

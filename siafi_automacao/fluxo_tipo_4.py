@@ -10,7 +10,7 @@ def tipo_4(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
         if uo_anterior == data_row['uo']:
         
             if orientacao_anterior != data_row['orientacao']:
-                retorno, nr_doc = finalizar_documento(em, data_row['uo'],uo_anterior)
+                retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior, data_row)
                 em.wait_for_field()
                 linha = 11
                 uo_anterior = 0
@@ -22,7 +22,7 @@ def tipo_4(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
                 conclusao = 1
 
             if conclusao == 1:
-                retorno, nr_doc = finalizar_documento(em, data_row['uo'],uo_anterior)
+                retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior, data_row)
 
             linha = 11
             

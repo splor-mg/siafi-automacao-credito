@@ -33,14 +33,22 @@ CAMINHO_LOCAL     = '/home/guilhermemelof/code/splor-mg/siafi-automacao-credito/
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'ROBO'
 
-em = Emulator(visible=True) ##caso queira que a tela apareça utilize visible=True
-em.connect('bhmvsb.prodemge.gov.br')
-em.wait_for_field()
+while True:
+    em = Emulator(visible=True)
+    em.connect('bhmvsb.prodemge.gov.br')
+    em.wait_for_field()
+
+    if not em.string_found(1, 2, 'UNABLE TO ESTABLISH SESSION'):
+        break
+
+    print("Não foi possível estabelecer conexão com o servidor. Tentando novamente...")
+    em.terminate()
+    time.sleep(1)
 
 # Preenche os dados de login
-em.fill_field(19, 13, sistema, 7)
-em.fill_field(20, 13, usuario, 7)
-em.fill_field(21, 13, senha, 7)
+em.fill_field(19, 13, sistema, 8)
+em.fill_field(20, 13, usuario, 8)
+em.fill_field(21, 13, senha, 8)
 em.send_enter()
 
 # Loop: navega pelas telas até encontrar a mensagem de sucesso
@@ -164,7 +172,7 @@ for idx, row in df.iterrows():
     if verifica_tipo != data_row['tipo']:
         ## finaliza o processo anterior, aguardando mensagem de sucesso e pegando o número do documento
         if verifica_tipo != 0:
-            retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior)
+            retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior, data_row)
 
         uo_anterior = 0
         linha = 11
@@ -192,7 +200,7 @@ if linha == 21:
     em.send_pf(8)  # envia F8 para ir para a próxima página
     em.wait_for_field()
 
-retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior)
+retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior, data_row)
 
 
 print()

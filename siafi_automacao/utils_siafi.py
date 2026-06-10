@@ -1,7 +1,7 @@
 import time
 
 
-def finalizar_documento(em, uo, uo_anterior):
+def finalizar_documento(em, uo, uo_anterior, data_row):
     em.send_enter()
     em.wait_for_field()
     time.sleep(3)
@@ -17,7 +17,10 @@ def finalizar_documento(em, uo, uo_anterior):
     time.sleep(1)
 
     retorno = em.string_get(1, 1, 80).strip()
-    nr_doc = em.string_get(6, 39, 7).strip()
+    if data_row['tipo'] == '4' and data_row['orientacao'] == 'Anular':
+        nr_doc = em.string_get(6, 42, 7).strip()
+    else:
+        nr_doc = em.string_get(6, 39, 7).strip()
     print(f"SIAFI retornou: {retorno}: UO {uo_anterior} - Nº do documento: {nr_doc}")
 
     em.send_pf(3)

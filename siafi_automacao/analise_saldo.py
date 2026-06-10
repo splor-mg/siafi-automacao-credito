@@ -17,7 +17,7 @@ month = datetime.today().strftime("%m")
 year = datetime.today().strftime("%Y")
 
 # Caminho da planilha a ser executada
-CAMINHO_LOCAL = '/home/guilhermemelof/code/splor-mg/siafi-automacao-credito/data/copia.xlsm'
+CAMINHO_LOCAL = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', 'data', 'copia.xlsm'))
 
 # Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'ROBO'

@@ -1,5 +1,6 @@
 import os
 import shutil
+import subprocess
 from dotenv import load_dotenv
 from py3270 import Emulator
 from datetime import datetime
@@ -12,12 +13,37 @@ from fluxo_tipo_3 import tipo_3
 from fluxo_tipo_4 import tipo_4
 from utils_siafi import finalizar_documento
 
+load_dotenv()
+ONEDRIVE_BASE = os.getenv('ONEDRIVE_BASE')
+
+subprocess.run(['python3', os.path.join(os.path.dirname(__file__), 'consolida.py')])
+
+CAMINHO_LOCAL = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', 'data', 'copia.xlsm'))
+xlsm_win = subprocess.check_output(['wslpath', '-w', CAMINHO_LOCAL]).decode().strip()
+subprocess.Popen(['explorer.exe', xlsm_win], stdin=subprocess.DEVNULL)
+
+xlsx_path = os.path.join(ONEDRIVE_BASE, 'Robo', 'copia.xlsx')
+xlsx_win = subprocess.check_output(['wslpath', '-w', xlsx_path]).decode().strip()
+subprocess.Popen(['explorer.exe', xlsx_win], stdin=subprocess.DEVNULL)
+
+resposta = input("Arquivos consolidados, lembre de colar ele no arquivo copia.xlsm. Deseja prosseguir? s/n: ").strip().lower()
+if resposta != 's':
+    print("Processo interrompido.")
+    exit()
+
+subprocess.run(
+    ['powershell.exe', '-Command',
+     "try { $xl = [Runtime.InteropServices.Marshal]::GetActiveObject('Excel.Application');"
+     " $xl.Workbooks | Where-Object { $_.Name -in @('copia.xlsx','copia.xlsm') }"
+     " | ForEach-Object { $_.Close($false) } } catch {}"],
+    capture_output=True
+)
+
 agora = datetime.now()
 
 hora_atual = datetime.now().strftime("%H:%M:%S")
 print(f'Inicio do processo: {hora_atual}')
 
-load_dotenv()
 sistema = os.getenv('SISTEMA')
 usuario = os.getenv('USUARIO')
 senha = os.getenv('SENHA')
@@ -26,9 +52,6 @@ unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 day = datetime.today().strftime("%d")
 month = datetime.today().strftime("%m")
 year = datetime.today().strftime("%Y")
-
-# Caminho da planilha a ser executada
-CAMINHO_LOCAL     = '/home/guilhermemelof/code/splor-mg/siafi-automacao-credito/data/copia.xlsm'
 
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'ROBO'
@@ -210,3 +233,29 @@ hora_atual = datetime.now().strftime("%H:%M:%S")
 print(f'Fim do processo: {hora_atual}')
 
 em.terminate()
+
+# Salva cópia de conferência do arquivo lido
+conferencia_folder = os.path.join(ONEDRIVE_BASE, 'Conferencia arquivo robo')
+realizados_automacao = os.path.join(ONEDRIVE_BASE, 'Realizados', 'Automação Python')
+
+os.makedirs(conferencia_folder, exist_ok=True)
+os.makedirs(realizados_automacao, exist_ok=True)
+
+for arquivo_existente in os.listdir(conferencia_folder):
+    origem = os.path.join(conferencia_folder, arquivo_existente)
+    if os.path.isfile(origem):
+        destino = os.path.join(realizados_automacao, arquivo_existente)
+        if os.path.exists(destino):
+            nome, ext = os.path.splitext(arquivo_existente)
+            contador = 1
+            while os.path.exists(destino):
+                destino = os.path.join(realizados_automacao, f"{nome} ({contador}){ext}")
+                contador += 1
+        shutil.move(origem, destino)
+        print(f"Arquivo anterior movido para: {destino}")
+
+hoje = datetime.today().strftime("%d.%m")
+novo_nome = f'Conferencia arquivo robo {hoje}.xlsm'
+destino_copia = os.path.join(conferencia_folder, novo_nome)
+shutil.copyfile(CAMINHO_LOCAL, destino_copia)
+print(f"Cópia de conferência salva em: {destino_copia}")

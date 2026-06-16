@@ -5,7 +5,7 @@ def tipo_4(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
     ## Verifica se é anulação ou aprovação e preencche 03-1 para aprovação e 04-1 para anulação
     retorno = ''
 
-    while True:
+    while True:  
 
         if uo_anterior == data_row['uo']:
         
@@ -14,6 +14,7 @@ def tipo_4(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
                 em.wait_for_field()
                 linha = 11
                 uo_anterior = 0
+                conclusao = 0
 
         if uo_anterior != data_row['uo']:
             print("Realizando procedimento Tipo 4")

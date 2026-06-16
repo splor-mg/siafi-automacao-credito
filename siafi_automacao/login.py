@@ -22,11 +22,7 @@ CAMINHO_LOCAL = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '
 xlsm_win = subprocess.check_output(['wslpath', '-w', CAMINHO_LOCAL]).decode().strip()
 subprocess.Popen(['explorer.exe', xlsm_win], stdin=subprocess.DEVNULL)
 
-xlsx_path = os.path.join(ONEDRIVE_BASE, 'Robo', 'copia.xlsx')
-xlsx_win = subprocess.check_output(['wslpath', '-w', xlsx_path]).decode().strip()
-subprocess.Popen(['explorer.exe', xlsx_win], stdin=subprocess.DEVNULL)
-
-resposta = input("Arquivos consolidados, lembre de colar ele no arquivo copia.xlsm. Deseja prosseguir? s/n: ").strip().lower()
+resposta = input("Dados consolidados no copia.xlsm. Revise, salve e pressione s para continuar (n para cancelar): ").strip().lower()
 if resposta != 's':
     print("Processo interrompido.")
     exit()
@@ -34,7 +30,7 @@ if resposta != 's':
 subprocess.run(
     ['powershell.exe', '-Command',
      "try { $xl = [Runtime.InteropServices.Marshal]::GetActiveObject('Excel.Application');"
-     " $xl.Workbooks | Where-Object { $_.Name -in @('copia.xlsx','copia.xlsm') }"
+     " $xl.Workbooks | Where-Object { $_.Name -eq 'copia.xlsm' }"
      " | ForEach-Object { $_.Close($false) } } catch {}"],
     capture_output=True
 )
@@ -146,8 +142,7 @@ em.wait_for_field()
 
 # Leitura da Planilha
 df = pd.read_excel(CAMINHO_LOCAL, sheet_name=SHEET_NAME)
-df = df.dropna(how='all')  # remove linhas completamente vazias
-df = df.sort_values(by=['TIPO', 'UO_COD', 'ORIENTACAO'], ascending=[True, True, False]) # ordena por anulação e depois por UO
+df = df.dropna(how='all')
 df = df.reset_index(drop=False)
 
 # Definição de variáveis para controle do fluxo

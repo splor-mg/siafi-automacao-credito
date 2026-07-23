@@ -50,9 +50,9 @@ def conectar_e_logar():
     em.wait_for_field()
 
     # Preenche os dados de login
-    em.fill_field(19, 13, SISTEMA, 7)
-    em.fill_field(20, 13, USUARIO, 7)
-    em.fill_field(21, 13, SENHA, 7)
+    em.fill_field(19, 13, SISTEMA, 8)
+    em.fill_field(20, 13, USUARIO, 8)
+    em.fill_field(21, 13, SENHA, 8)
     em.send_enter()
 
     # Loop: navega pelas telas até encontrar a mensagem de sucesso

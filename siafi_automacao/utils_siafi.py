@@ -21,7 +21,7 @@ def finalizar_documento(em, uo, uo_anterior, data_row):
         print(f"Erro de saldo contábil na solicitação da UO {uo_anterior}")
     else:
         retorno = em.string_get(1, 1, 80).strip()
-
+        time.sleep(1)
         linha_6 = em.string_get(6, 1, 80).strip()
 
         marcador = "Nr. Documento:"

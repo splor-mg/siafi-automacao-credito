@@ -1,4 +1,5 @@
 import os
+import sys
 import shutil
 import subprocess
 from dotenv import load_dotenv
@@ -16,16 +17,39 @@ from utils_siafi import finalizar_documento
 load_dotenv()
 ONEDRIVE_BASE = os.getenv('ONEDRIVE_BASE')
 
-subprocess.run(['python3', os.path.join(os.path.dirname(__file__), 'consolida.py')])
+DIR_SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 
-CAMINHO_LOCAL = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', 'data', 'copia.xlsm'))
+# ---------------------------------------------------------------------------
+# Etapa 1 — Consolidação das planilhas
+# ---------------------------------------------------------------------------
+try:
+    subprocess.run(
+        ['python3', os.path.join(DIR_SCRIPTS, 'consolida.py')],
+        check=True
+    )
+except subprocess.CalledProcessError:
+    print()
+    print("=" * 70)
+    print("  PROCESSO INTERROMPIDO NA CONSOLIDAÇÃO")
+    print("=" * 70)
+    print("  Corrija os erros apontados acima nas planilhas de origem")
+    print("  e execute o robô novamente.")
+    print("=" * 70)
+    print()
+    sys.exit(1)
+
+CAMINHO_LOCAL = os.path.realpath(os.path.join(DIR_SCRIPTS, '..', 'data', 'copia.xlsm'))
+
+# ---------------------------------------------------------------------------
+# Etapa 2 — Conferência manual no Excel
+# ---------------------------------------------------------------------------
 xlsm_win = subprocess.check_output(['wslpath', '-w', CAMINHO_LOCAL]).decode().strip()
 subprocess.Popen(['explorer.exe', xlsm_win], stdin=subprocess.DEVNULL)
 
 resposta = input("Dados consolidados no copia.xlsm. Revise, salve e pressione s para continuar (n para cancelar): ").strip().lower()
 if resposta != 's':
     print("Processo interrompido.")
-    exit()
+    sys.exit(0)
 
 subprocess.run(
     ['powershell.exe', '-Command',
@@ -35,6 +59,37 @@ subprocess.run(
     capture_output=True
 )
 
+# ---------------------------------------------------------------------------
+# Etapa 3 — Análise de saldo das dotações a anular
+# ---------------------------------------------------------------------------
+print()
+print("Iniciando a análise de saldo das dotações...")
+print()
+
+try:
+    subprocess.run(
+        ['python3', os.path.join(DIR_SCRIPTS, 'analise_saldo.py')],
+        check=True
+    )
+except subprocess.CalledProcessError:
+    print()
+    print("=" * 70)
+    print("  PROCESSO INTERROMPIDO NA ANÁLISE DE SALDO")
+    print("=" * 70)
+    print("  Nenhuma solicitação foi enviada ao SIAFI.")
+    print("  Corrija as dotações apontadas acima no copia.xlsm (ou nas")
+    print("  planilhas de origem) e execute o robô novamente.")
+    print("=" * 70)
+    print()
+    sys.exit(2)
+
+print()
+print("Análise de saldo aprovada. Iniciando as solicitações no SIAFI...")
+print()
+
+# ---------------------------------------------------------------------------
+# Etapa 4 — Solicitações no SIAFI
+# ---------------------------------------------------------------------------
 agora = datetime.now()
 
 hora_atual = datetime.now().strftime("%H:%M:%S")
@@ -148,6 +203,7 @@ df = df.reset_index(drop=False)
 # Definição de variáveis para controle do fluxo
 verifica_tipo = 0
 conclusao = 0
+linha = 11
 
 # Loop para processar cada linha da planilha
 for idx, row in df.iterrows():

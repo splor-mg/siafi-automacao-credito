@@ -2,8 +2,18 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode
 
 # Arquivos de dados locais
+# ATENCAO: estas regras so valem para arquivos NAO rastreados. Se um arquivo ja
+# foi commitado antes da regra existir, e preciso rodar:
+#     git rm --cached data/copia.xlsm
 data/*.xlsx
 data/*.xlsm
+data/*.xls
+data/*.csv
+data/copia.xlsm
+!data/modelo.xlsm
+
+# Sentinela gerada pelo setup_credito.sh (uma por maquina)
+.setup_done
 
 ### Python ###
 # Byte-compiled / optimized / DLL files

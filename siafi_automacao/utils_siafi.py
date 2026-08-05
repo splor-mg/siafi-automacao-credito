@@ -1,5 +1,7 @@
 import time
 
+import resultado
+
 
 def finalizar_documento(em, uo, uo_anterior, data_row):
     em.send_enter()
@@ -21,6 +23,7 @@ def finalizar_documento(em, uo, uo_anterior, data_row):
         print(f"Erro de saldo contábil na solicitação da UO {uo_anterior}")
         retorno = "Erro"
         nr_doc = ""
+        resultado.registrar_erro(uo_anterior)
     else:
         retorno = em.string_get(1, 1, 80).strip()
         time.sleep(1)
@@ -34,6 +37,7 @@ def finalizar_documento(em, uo, uo_anterior, data_row):
             nr_doc = ""
 
         print(f"SIAFI retornou: {retorno}: UO {uo_anterior} - Nº do documento: {nr_doc}")
+        resultado.registrar_ok(uo_anterior, nr_doc)
 
     em.send_pf(3)
     em.wait_for_field()

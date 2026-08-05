@@ -13,6 +13,7 @@ from fluxo_tipo_2 import tipo_2
 from fluxo_tipo_3 import tipo_3
 from fluxo_tipo_4 import tipo_4
 from utils_siafi import finalizar_documento
+import resultado
 
 load_dotenv()
 ONEDRIVE_BASE = os.getenv('ONEDRIVE_BASE')
@@ -205,108 +206,115 @@ verifica_tipo = 0
 conclusao = 0
 linha = 11
 
-# Loop para processar cada linha da planilha
-for idx, row in df.iterrows():
+try:
+    # Loop para processar cada linha da planilha
+    for idx, row in df.iterrows():
 
-        # Pula linhas onde UO_COD está vazio (fim da planilha ou linha vazia)
-    if pd.isna(row['UO_COD']):
-        continue
+            # Pula linhas onde UO_COD está vazio (fim da planilha ou linha vazia)
+        if pd.isna(row['UO_COD']):
+            continue
 
         
-    data_row = {}
-    data_row['month']   = month
-    data_row['day']     = day
-    data_row['year']    = year
-    data_row['orientacao']    = str(row['ORIENTACAO']).strip()
-    data_row['uo']            = str(int(row['UO_COD']))
-    data_row['acao']          = str(int(row['ACAO_COD']))
-    data_row['funcao']        = str(int(row['FUNCAO_COD'])).zfill(2) 
-    data_row['subfuncao']     = str(int(row['SUBFUNCAO_COD'])).zfill(3) 
-    data_row['programa']      = str(int(row['PROGRAMA_COD'])).zfill(3) 
-    data_row['subprojeto']    = str(int(row['SUBPROJETO_COD']))
-    data_row['categoria']     = str(int(row['CATEGORIA_COD']))
-    data_row['grupo']         = str(int(row['GRUPO_COD']))
-    data_row['modalidade']    = str(int(row['MODALIDADE_COD']))
-    data_row['elemento']      = str(int(row['ELEMENTO_COD'])).zfill(2) 
-    data_row['iag']           = str(int(row['IPG_COD']))
-    data_row['fonte']         = str(int(row['FONTE_COD'])).zfill(2) 
-    data_row['procedencia']   = str(int(row['IPU_COD']))
+        data_row = {}
+        data_row['month']   = month
+        data_row['day']     = day
+        data_row['year']    = year
+        data_row['orientacao']    = str(row['ORIENTACAO']).strip()
+        data_row['uo']            = str(int(row['UO_COD']))
+        data_row['acao']          = str(int(row['ACAO_COD']))
+        data_row['funcao']        = str(int(row['FUNCAO_COD'])).zfill(2) 
+        data_row['subfuncao']     = str(int(row['SUBFUNCAO_COD'])).zfill(3) 
+        data_row['programa']      = str(int(row['PROGRAMA_COD'])).zfill(3) 
+        data_row['subprojeto']    = str(int(row['SUBPROJETO_COD']))
+        data_row['categoria']     = str(int(row['CATEGORIA_COD']))
+        data_row['grupo']         = str(int(row['GRUPO_COD']))
+        data_row['modalidade']    = str(int(row['MODALIDADE_COD']))
+        data_row['elemento']      = str(int(row['ELEMENTO_COD'])).zfill(2) 
+        data_row['iag']           = str(int(row['IPG_COD']))
+        data_row['fonte']         = str(int(row['FONTE_COD'])).zfill(2) 
+        data_row['procedencia']   = str(int(row['IPU_COD']))
 
-    if data_row['orientacao'] == 'Anular': # se for anulação, o valor deve ser multiplicado por -1 para ficar negativo
-        data_row['valor']      = str(-int(round(row['VALOR'])))
-    else:
-        data_row['valor']      = str(int(round(row['VALOR'])))
+        if data_row['orientacao'] == 'Anular': # se for anulação, o valor deve ser multiplicado por -1 para ficar negativo
+            data_row['valor']      = str(-int(round(row['VALOR'])))
+        else:
+            data_row['valor']      = str(int(round(row['VALOR'])))
 
-    data_row['uo_suplementada'] = str(int(row['UO_SUPLEMENTADA'])) if pd.notna(row['UO_SUPLEMENTADA']) else '0'
-    data_row['tipo']          = str(int(row['TIPO']))
+        data_row['uo_suplementada'] = str(int(row['UO_SUPLEMENTADA'])) if pd.notna(row['UO_SUPLEMENTADA']) else '0'
+        data_row['tipo']          = str(int(row['TIPO']))
 
-    retorno = ''
+        retorno = ''
 
-    ## Definição de variável para controle do fluxo.
-    if verifica_tipo != data_row['tipo']:
-        ## finaliza o processo anterior, aguardando mensagem de sucesso e pegando o número do documento
-        if verifica_tipo != 0:
-            retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior, data_row)
+        ## Definição de variável para controle do fluxo.
+        if verifica_tipo != data_row['tipo']:
+            ## finaliza o processo anterior, aguardando mensagem de sucesso e pegando o número do documento
+            if verifica_tipo != 0:
+                retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior, data_row)
 
-        uo_anterior = 0
-        linha = 11
-        orientacao_anterior = "Suplementar"
-        conclusao = 0
+            uo_anterior = 0
+            linha = 11
+            orientacao_anterior = "Suplementar"
+            conclusao = 0
 
-    if data_row['tipo'] == '1':
-        retorno, linha, conclusao = tipo_1(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
-    elif data_row['tipo'] == '2':
-        retorno, linha, conclusao = tipo_2(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
-    elif data_row['tipo'] == '3':
-        retorno, linha, conclusao = tipo_3(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
-    elif data_row['tipo'] == '4':
-        retorno, linha, conclusao = tipo_4(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
+        if data_row['tipo'] == '1':
+            retorno, linha, conclusao = tipo_1(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
+        elif data_row['tipo'] == '2':
+            retorno, linha, conclusao = tipo_2(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
+        elif data_row['tipo'] == '3':
+            retorno, linha, conclusao = tipo_3(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
+        elif data_row['tipo'] == '4':
+            retorno, linha, conclusao = tipo_4(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao)
 
-    uo_anterior = data_row['uo']  # armazena a UO da linha atual para comparação na próxima iteração
-    orientacao_anterior = data_row['orientacao']  # armazena a orientação da linha atual para comparação na próxima iteração
-    verifica_tipo = data_row['tipo']  # armazena a orientação da linha atual para comparação na próxima iteração
+        uo_anterior = data_row['uo']  # armazena a UO da linha atual para comparação na próxima iteração
+        orientacao_anterior = data_row['orientacao']  # armazena a orientação da linha atual para comparação na próxima iteração
+        verifica_tipo = data_row['tipo']  # armazena a orientação da linha atual para comparação na próxima iteração
+        resultado.marcar_linha(int(row['index']) + 2)  # última linha que entrou no documento em aberto
 
-##    if data_row['tipo'] == '999':
-##        break
+    ##    if data_row['tipo'] == '999':
+    ##        break
 
-### Conclui última linha processada, aguardando mensagem de sucesso e pegando o número do documento
-if linha == 21:
-    em.send_pf(8)  # envia F8 para ir para a próxima página
-    em.wait_for_field()
+    ### Conclui última linha processada, aguardando mensagem de sucesso e pegando o número do documento
+    if linha == 21:
+        em.send_pf(8)  # envia F8 para ir para a próxima página
+        em.wait_for_field()
 
-retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior, data_row)
+    retorno, nr_doc = finalizar_documento(em, data_row['uo'], uo_anterior, data_row)
 
 
-print()
-print(f"Fluxo concluído.")
+    print()
+    print(f"Fluxo concluído.")
 
-hora_atual = datetime.now().strftime("%H:%M:%S")
-print(f'Fim do processo: {hora_atual}')
+finally:
+    hora_atual = datetime.now().strftime("%H:%M:%S")
+    print(f'Fim do processo: {hora_atual}')
 
-em.terminate()
+    em.terminate()
 
-# Salva cópia de conferência do arquivo lido
-conferencia_folder = os.path.join(ONEDRIVE_BASE, 'Conferencia arquivo robo')
-realizados_automacao = os.path.join(ONEDRIVE_BASE, 'Realizados', 'Automação Python')
+    # Grava o desfecho de cada documento na aba ROBO (colunas U e V)
+    resultado.gravar(CAMINHO_LOCAL)
+    resultado.imprimir_resumo()
 
-os.makedirs(conferencia_folder, exist_ok=True)
-os.makedirs(realizados_automacao, exist_ok=True)
+    # Salva cópia de conferência do arquivo lido
+    conferencia_folder = os.path.join(ONEDRIVE_BASE, 'Conferencia arquivo robo')
+    realizados_automacao = os.path.join(ONEDRIVE_BASE, 'Realizados', 'Automação Python')
 
-for arquivo_existente in os.listdir(conferencia_folder):
-    origem = os.path.join(conferencia_folder, arquivo_existente)
-    if os.path.isfile(origem):
-        destino = os.path.join(realizados_automacao, arquivo_existente)
-        if os.path.exists(destino):
-            nome, ext = os.path.splitext(arquivo_existente)
-            contador = 1
-            while os.path.exists(destino):
-                destino = os.path.join(realizados_automacao, f"{nome} ({contador}){ext}")
-                contador += 1
-        shutil.move(origem, destino)
-        print(f"Arquivo anterior movido para: {destino}")
+    os.makedirs(conferencia_folder, exist_ok=True)
+    os.makedirs(realizados_automacao, exist_ok=True)
 
-hoje = datetime.today().strftime("%d.%m")
-novo_nome = f'Conferencia arquivo robo {hoje}.xlsm'
-destino_copia = os.path.join(conferencia_folder, novo_nome)
-shutil.copyfile(CAMINHO_LOCAL, destino_copia)
-print(f"Cópia de conferência salva em: {destino_copia}")
+    for arquivo_existente in os.listdir(conferencia_folder):
+        origem = os.path.join(conferencia_folder, arquivo_existente)
+        if os.path.isfile(origem):
+            destino = os.path.join(realizados_automacao, arquivo_existente)
+            if os.path.exists(destino):
+                nome, ext = os.path.splitext(arquivo_existente)
+                contador = 1
+                while os.path.exists(destino):
+                    destino = os.path.join(realizados_automacao, f"{nome} ({contador}){ext}")
+                    contador += 1
+            shutil.move(origem, destino)
+            print(f"Arquivo anterior movido para: {destino}")
+
+    hoje = datetime.today().strftime("%d.%m")
+    novo_nome = f'Conferencia arquivo robo {hoje}.xlsm'
+    destino_copia = os.path.join(conferencia_folder, novo_nome)
+    shutil.copyfile(CAMINHO_LOCAL, destino_copia)
+    print(f"Cópia de conferência salva em: {destino_copia}")

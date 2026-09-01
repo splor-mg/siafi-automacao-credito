@@ -34,6 +34,14 @@ DIR_SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 SHEET_NAME = 'ROBO'
 
 
+# Como servico do systemd o PATH nao traz os diretorios do Windows, entao
+# 'powershell.exe' nao e encontrado pelo nome — mesmo com o interop do WSL
+# funcionando normalmente. Pelo caminho absoluto funciona.
+_PS_PADRAO = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
+POWERSHELL = (_PS_PADRAO if os.path.exists(_PS_PADRAO)
+              else (shutil.which('powershell.exe') or 'powershell.exe'))
+
+
 def recalcular_no_excel(caminho):
     """Faz o proprio Excel abrir, recalcular e salvar a planilha.
 
@@ -59,8 +67,15 @@ def recalcular_no_excel(caminho):
         "  Write-Output 'OK'"
         "} catch { Write-Output ('ERRO: ' + $_.Exception.Message) }"
     )
-    saida = subprocess.run(['powershell.exe', '-NoProfile', '-Command', ps],
-                           capture_output=True, text=True).stdout.strip()
+    try:
+        saida = subprocess.run([POWERSHELL, '-NoProfile', '-Command', ps],
+                               capture_output=True, text=True).stdout.strip()
+    except OSError as e:
+        # Sem isto o FileNotFoundError subia como traceback e o grupo recebia
+        # 'FALHOU' com rodape vazio, sem nenhuma pista.
+        print(f"[erro] nao consegui executar o PowerShell ({POWERSHELL}): {e}")
+        return False
+
     if not saida.endswith('OK'):
         print(f"[erro] Excel nao recalculou: {saida}")
         return False

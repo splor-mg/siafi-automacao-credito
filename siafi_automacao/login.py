@@ -20,9 +20,6 @@ from relato import relato
 load_dotenv()
 ONEDRIVE_BASE = os.getenv('ONEDRIVE_BASE')
 
-# Acionamento remoto (bot do Telegram): sem ninguem na frente da maquina.
-DESASSISTIDO = os.getenv('ROBO_DESASSISTIDO', '').lower() in ('1', 'true', 'sim')
-
 # Janela grafica do x3270 depende do WSLg da sessao interativa. Como servico do
 # systemd nao ha DISPLAY, e o emulador morre com 'Can't open display'.
 SIAFI_VISIVEL = os.getenv('SIAFI_VISIVEL', 'true').lower() == 'true'
@@ -107,12 +104,13 @@ relato('planilha', 'Planilhas consolidadas, validação OK.')
 CAMINHO_LOCAL = os.path.realpath(os.path.join(DIR_SCRIPTS, '..', 'data', 'copia.xlsm'))
 
 # ---------------------------------------------------------------------------
-# Etapa 2 — Recálculo das fórmulas e revisão
+# Etapa 2 — Recálculo das fórmulas
 #
-# Acionado pelo Telegram nao ha ninguem para abrir o Excel nem digitar 's', e
-# como servico do systemd a entrada padrao e /dev/null: o input() estouraria
-# com EOFError. Nesse caminho a conferencia precisa ter sido feita ANTES de
-# por a planilha na pasta de origem. O duplo-clique no .bat segue pedindo o 's'.
+# A aba ROBO e derivada por formula da aba PREENCHER AQUI, e o openpyxl nao
+# calcula nada. Sem este passo ela chega vazia no laco de solicitacoes.
+#
+# Nao ha mais parada para revisao: a conferencia da planilha e feita ANTES de
+# ela ser posta na pasta de origem, igual ao robo de cota.
 # ---------------------------------------------------------------------------
 print()
 print("Recalculando as fórmulas da planilha no Excel...")
@@ -132,26 +130,6 @@ print(f"{_prontas} linha(s) prontas na aba ROBO.")
 # Sem o campo 'linhas': aqui o robo sabe a contagem, nao quais linhas
 # sao — diferente do robo de cota, que lista os numeros.
 relato('pendentes', f'{_prontas} linha(s) a processar')
-
-if DESASSISTIDO:
-    print("Modo desassistido: seguindo sem a revisão manual no Excel.")
-else:
-    xlsm_win = subprocess.check_output(['wslpath', '-w', CAMINHO_LOCAL]).decode().strip()
-    subprocess.Popen(['explorer.exe', xlsm_win], stdin=subprocess.DEVNULL)
-
-    resposta = input("Dados consolidados no copia.xlsm. Revise, salve e pressione s para continuar (n para cancelar): ").strip().lower()
-    if resposta != 's':
-        print("Processo interrompido.")
-        relato('aviso', 'Cancelado na conferência manual. Nada foi enviado ao SIAFI.')
-        sys.exit(0)
-
-    subprocess.run(
-        ['powershell.exe', '-Command',
-         "try { $xl = [Runtime.InteropServices.Marshal]::GetActiveObject('Excel.Application');"
-         " $xl.Workbooks | Where-Object { $_.Name -eq 'copia.xlsm' }"
-         " | ForEach-Object { $_.Close($false) } } catch {}"],
-        capture_output=True
-    )
 
 # ---------------------------------------------------------------------------
 # Etapa 3 — Login no SIAFI (uma sessão só, usada tambem pela analise)
@@ -307,8 +285,6 @@ if not analise_saldo.voltar_ao_menu(em):
 print("Análise de saldo aprovada. Iniciando as solicitações no SIAFI...")
 print()
 
-breakpoint()
-
 # ---------------------------------------------------------------------------
 # Etapa 5 — Solicitações
 # ---------------------------------------------------------------------------
@@ -432,4 +408,6 @@ finally:
     novo_nome = f'Conferencia arquivo robo {hoje}.xlsm'
     destino_copia = os.path.join(conferencia_folder, novo_nome)
     shutil.copyfile(CAMINHO_LOCAL, destino_copia)
+    relato('planilha_final',
+           f'Cópia de conferência salva em: {destino_copia}', arquivo=novo_nome)
     print(f"Cópia de conferência salva em: {destino_copia}")

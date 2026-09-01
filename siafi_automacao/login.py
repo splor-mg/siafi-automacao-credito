@@ -14,9 +14,21 @@ from fluxo_tipo_3 import tipo_3
 from fluxo_tipo_4 import tipo_4
 from utils_siafi import finalizar_documento
 import resultado
+from relato import relato
 
 load_dotenv()
 ONEDRIVE_BASE = os.getenv('ONEDRIVE_BASE')
+
+# Acionamento remoto (bot do Telegram): sem ninguem na frente da maquina.
+DESASSISTIDO = os.getenv('ROBO_DESASSISTIDO', '').lower() in ('1', 'true', 'sim')
+
+# Janela grafica do x3270 depende do WSLg da sessao interativa. Como servico do
+# systemd nao ha DISPLAY, e o emulador morre com 'Can't open display'.
+SIAFI_VISIVEL = os.getenv('SIAFI_VISIVEL', 'true').lower() == 'true'
+
+# Antes o laco de conexao era infinito: com a VPN fora do ar o robo ficava
+# preso para sempre, segurando o lock e sem devolver codigo de erro a ninguem.
+CONEXAO_TENTATIVAS = int(os.getenv('CONEXAO_TENTATIVAS', '10'))
 
 DIR_SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 
@@ -37,28 +49,41 @@ except subprocess.CalledProcessError:
     print("  e execute o robô novamente.")
     print("=" * 70)
     print()
+    relato('erro', 'Consolidação reprovada. Corrija as planilhas de origem e '
+                   'acione de novo. Use /log para o relatório completo.')
     sys.exit(1)
+
+relato('planilha', 'Planilhas consolidadas, validação OK.')
 
 CAMINHO_LOCAL = os.path.realpath(os.path.join(DIR_SCRIPTS, '..', 'data', 'copia.xlsm'))
 
 # ---------------------------------------------------------------------------
 # Etapa 2 — Conferência manual no Excel
+#
+# Acionado pelo Telegram nao ha ninguem para abrir o Excel nem digitar 's', e
+# como servico do systemd a entrada padrao e /dev/null: o input() estouraria
+# com EOFError. Nesse caminho a conferencia precisa ter sido feita ANTES de
+# por a planilha na pasta de origem. O duplo-clique no .bat segue pedindo o 's'.
 # ---------------------------------------------------------------------------
-xlsm_win = subprocess.check_output(['wslpath', '-w', CAMINHO_LOCAL]).decode().strip()
-subprocess.Popen(['explorer.exe', xlsm_win], stdin=subprocess.DEVNULL)
+if DESASSISTIDO:
+    print("Modo desassistido: seguindo sem a conferência manual no Excel.")
+else:
+    xlsm_win = subprocess.check_output(['wslpath', '-w', CAMINHO_LOCAL]).decode().strip()
+    subprocess.Popen(['explorer.exe', xlsm_win], stdin=subprocess.DEVNULL)
 
-resposta = input("Dados consolidados no copia.xlsm. Revise, salve e pressione s para continuar (n para cancelar): ").strip().lower()
-if resposta != 's':
-    print("Processo interrompido.")
-    sys.exit(0)
+    resposta = input("Dados consolidados no copia.xlsm. Revise, salve e pressione s para continuar (n para cancelar): ").strip().lower()
+    if resposta != 's':
+        print("Processo interrompido.")
+        relato('aviso', 'Cancelado na conferência manual. Nada foi enviado ao SIAFI.')
+        sys.exit(0)
 
-subprocess.run(
-    ['powershell.exe', '-Command',
-     "try { $xl = [Runtime.InteropServices.Marshal]::GetActiveObject('Excel.Application');"
-     " $xl.Workbooks | Where-Object { $_.Name -eq 'copia.xlsm' }"
-     " | ForEach-Object { $_.Close($false) } } catch {}"],
-    capture_output=True
-)
+    subprocess.run(
+        ['powershell.exe', '-Command',
+         "try { $xl = [Runtime.InteropServices.Marshal]::GetActiveObject('Excel.Application');"
+         " $xl.Workbooks | Where-Object { $_.Name -eq 'copia.xlsm' }"
+         " | ForEach-Object { $_.Close($false) } } catch {}"],
+        capture_output=True
+    )
 
 # ---------------------------------------------------------------------------
 # Etapa 3 — Análise de saldo das dotações a anular
@@ -82,6 +107,9 @@ except subprocess.CalledProcessError:
     print("  planilhas de origem) e execute o robô novamente.")
     print("=" * 70)
     print()
+    relato('aviso', 'Análise de saldo reprovada: NENHUMA solicitação foi enviada '
+                    'ao SIAFI. Corrija as dotações apontadas e acione de novo. '
+                    'Use /log para ver quais.')
     sys.exit(2)
 
 print()
@@ -108,17 +136,27 @@ year = datetime.today().strftime("%Y")
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'ROBO'
 
-while True:
-    em = Emulator(visible=True)
+em = None
+for _tentativa in range(1, CONEXAO_TENTATIVAS + 1):
+    em = Emulator(visible=SIAFI_VISIVEL)
     em.connect('bhmvsb.prodemge.gov.br')
     em.wait_for_field()
 
     if not em.string_found(1, 2, 'UNABLE TO ESTABLISH SESSION'):
         break
 
-    print("Não foi possível estabelecer conexão com o servidor. Tentando novamente...")
+    print(f"Tentativa {_tentativa}/{CONEXAO_TENTATIVAS}: o servidor recusou a "
+          "sessao (UNABLE TO ESTABLISH SESSION). Tentando novamente...")
     em.terminate()
+    em = None
     time.sleep(1)
+else:
+    print()
+    print(f"Nao foi possivel conectar ao SIAFI apos {CONEXAO_TENTATIVAS} tentativas.")
+    relato('erro',
+           f'Nao foi possivel conectar ao SIAFI apos {CONEXAO_TENTATIVAS} tentativas.\n'
+           'Verifique se a VPN esta conectada e se nao ha sessao anterior aberta.')
+    sys.exit(1)
 
 # Preenche os dados de login
 em.fill_field(19, 13, sistema, 8)
@@ -171,7 +209,7 @@ while tentativas < max_tentativas:
 
         # Tela COM campo editável — verifica se é a tela de sucesso
         if em.string_found(22, 11, 'Unidade Executora'):
-            print("Texto encontrado")
+            relato('login', 'Login no SIAFI realizado')
             break
 
         else:
@@ -281,7 +319,7 @@ try:
 
 
     print()
-    print(f"Fluxo concluído.")
+    relato('fim', 'Fluxo concluído.')
 
 finally:
     hora_atual = datetime.now().strftime("%H:%M:%S")

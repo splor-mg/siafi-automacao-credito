@@ -26,22 +26,21 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Atualizar o repositorio
-Write-Host "Atualizando o robo (git pull na main)..." -ForegroundColor Cyan
-wsl -d Ubuntu -- bash -c "cd $RepoDir && git checkout main && git pull origin main"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[aviso] Nao foi possivel atualizar via git pull. Rodando a versao local atual." -ForegroundColor Yellow
-}
-Write-Host ""
-
-# O login.py orquestra todo o fluxo:
+# A sequencia (git pull, venv, login.py) vive no rodar.sh, compartilhada com o
+# bot do Telegram, para os dois caminhos rodarem exatamente a mesma coisa.
+# O login.py orquestra o fluxo:
 #   consolida.py -> revisao no Excel -> analise_saldo.py -> solicitacoes
 Write-Host "Iniciando o robo SIAFI (credito)..." -ForegroundColor Cyan
-wsl -d Ubuntu -- bash -c "cd $RepoDir && source venv/bin/activate && PYTHONIOENCODING=utf-8 python siafi_automacao/login.py"
+wsl -d Ubuntu -- bash -c "bash $RepoDir/rodar.sh"
 
 $roboExit = $LASTEXITCODE
 
-if ($roboExit -eq 2) {
+if ($roboExit -eq 10) {
+    Write-Host ""
+    Write-Host "Ja existe uma execucao do robo (cota ou credito) em andamento." -ForegroundColor Yellow
+    Write-Host "Os dois usam o mesmo usuario do SIAFI. Aguarde terminar."       -ForegroundColor Yellow
+}
+elseif ($roboExit -eq 2) {
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor Yellow
     Write-Host "  Processo INTERROMPIDO na analise de saldo."                  -ForegroundColor Yellow

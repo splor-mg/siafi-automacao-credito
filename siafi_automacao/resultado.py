@@ -1,3 +1,5 @@
+from relato import relato
+
 """
 Registro do desfecho de cada documento enviado ao SIAFI, gravado na aba ROBO.
 
@@ -45,6 +47,12 @@ def _registrar(uo, status, nr_doc):
         # não há onde gravar, mas o terminal já informou o desfecho.
         return
     _resultados.append((_ultima_linha, uo, status, nr_doc))
+
+    detalhe = f'doc {nr_doc}' if status == 'ok' else 'nao registrado no SIAFI'
+    relato('documento',
+           f'UO {uo} | linha {_ultima_linha} | {status.upper()} | {detalhe}',
+           linha=_ultima_linha, uo=str(uo), nr_doc=str(nr_doc or ''),
+           ok=(status == 'ok'))
 
 
 def houve_erro():

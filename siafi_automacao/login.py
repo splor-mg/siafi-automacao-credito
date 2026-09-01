@@ -307,6 +307,8 @@ if not analise_saldo.voltar_ao_menu(em):
 print("Análise de saldo aprovada. Iniciando as solicitações no SIAFI...")
 print()
 
+breakpoint()
+
 # ---------------------------------------------------------------------------
 # Etapa 5 — Solicitações
 # ---------------------------------------------------------------------------

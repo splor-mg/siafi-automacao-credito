@@ -22,14 +22,15 @@ wsl -d Ubuntu -- bash -c "test -d $RepoDir/venv && test -f $RepoDir/.env" 2>$nul
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERRO: ambiente nao configurado nesta maquina." -ForegroundColor Red
     Write-Host "Repositorio, venv ou .env ausentes em $RepoDir." -ForegroundColor Red
-    Write-Host "Rode o setup_credito.sh antes de usar este atalho." -ForegroundColor Red
+    Write-Host "Rode o setup.sh antes de usar este atalho." -ForegroundColor Red
     exit 1
 }
 
 # A sequencia (git pull, venv, login.py) vive no rodar.sh, compartilhada com o
 # bot do Telegram, para os dois caminhos rodarem exatamente a mesma coisa.
-# O login.py orquestra o fluxo:
-#   consolida.py -> revisao no Excel -> analise_saldo.py -> solicitacoes
+# O login.py orquestra o fluxo, numa sessao so do emulador:
+#   consolida -> Excel recalcula as formulas -> revisao -> login no SIAFI
+#   -> analise de saldo -> solicitacoes
 Write-Host "Iniciando o robo SIAFI (credito)..." -ForegroundColor Cyan
 wsl -d Ubuntu -- bash -c "bash $RepoDir/rodar.sh"
 

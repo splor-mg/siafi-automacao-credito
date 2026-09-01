@@ -1,6 +1,8 @@
 import os
 import sys
 import shutil
+from relato import relato
+
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -45,6 +47,16 @@ def abortar(titulo, mensagens):
         print(f"  - {m}")
     print("=" * 70)
     print()
+
+    # Manda o motivo REAL para o grupo. Antes so chegava a frase generica do
+    # login.py ("corrija as planilhas de origem"), que apontava para o lugar
+    # errado quando o problema era outro — uma pasta inexistente, por exemplo.
+    LIMITE = 8
+    detalhes = [f'- {m}' for m in mensagens[:LIMITE]]
+    if len(mensagens) > LIMITE:
+        detalhes.append(f'- ... e mais {len(mensagens) - LIMITE}, veja /log')
+    relato('erro', titulo + '\n' + '\n'.join(detalhes))
+
     sys.exit(1)
 
 

@@ -110,8 +110,8 @@ except subprocess.CalledProcessError:
     print("  e execute o robô novamente.")
     print("=" * 70)
     print()
-    relato('erro', 'Consolidação reprovada. Corrija as planilhas de origem e '
-                   'acione de novo. Use /log para o relatório completo.')
+    relato('erro', 'A consolidação não passou. O motivo está acima. '
+                   'Use /log para o relatório completo.')
     sys.exit(1)
 
 relato('planilha', 'Planilhas consolidadas, validação OK.')

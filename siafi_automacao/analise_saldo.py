@@ -45,7 +45,9 @@ MSG_INEXISTENTE = 'INEXISTENTE'
 
 def conectar_e_logar():
     """Abre o emulador, faz login no SIAFI e informa a Unidade Executora."""
-    em = Emulator(visible=True)  # use visible=False para rodar sem janela gráfica
+    # Sem DISPLAY (servico do systemd, acionado pelo Telegram) o x3270 morre
+    # com 'Can't open display'. O SIAFI_VISIVEL=false faz usar o s3270.
+    em = Emulator(visible=os.getenv('SIAFI_VISIVEL', 'true').lower() == 'true')
     em.connect('bhmvsb.prodemge.gov.br')
     em.wait_for_field()
 
@@ -249,6 +251,43 @@ def descrever(data_row, linha_excel):
 # Fluxo principal
 # ---------------------------------------------------------------------------
 
+def voltar_ao_menu(em, tentativas=6):
+    """Devolve o terminal ao estado em que o laco de solicitacoes comeca.
+
+    A analise navega ate as telas de consulta (09 -> 03 -> 07). Os fluxos
+    tipo_1..4 comecam digitando a opcao em (21, 19), no menu apos a Unidade
+    Executora. Em vez de adivinhar quantos PF3 desfazem o caminho, manda PF3
+    ate reconhecer a tela da Unidade Executora — o unico marcador confiavel
+    que o codigo tem — e reinforma a UO como o login.py faz.
+
+    Devolve False se nao chegar la. Quem chama DEVE abortar nesse caso: digitar
+    numa tela desconhecida do SIAFI e o pior desfecho possivel.
+    """
+    for _ in range(tentativas):
+        if em.string_found(22, 11, 'Unidade Executora'):
+            em.fill_field(22, 30, UNIDADE_EXECUTORA, 7)
+            em.send_enter()
+            em.wait_for_field()
+            return True
+        em.send_pf(3)
+        em.wait_for_field()
+        time.sleep(0.5)
+    return False
+
+
+def analisar(em):
+    """Roda a analise usando um emulador ja conectado e logado.
+
+    Existe para o login.py fazer UM login so: antes, a analise abria a sua
+    propria sessao e o login.py abria outra em seguida, com o mesmo usuario do
+    SIAFI — e o mainframe as vezes recusava a segunda com 'UNABLE TO ESTABLISH
+    SESSION' enquanto a primeira nao era liberada.
+
+    Nao encerra o emulador: quem o abriu e que fecha.
+    """
+    return _analisar_com(em)
+
+
 def main():
     print()
     print("=" * 70)
@@ -257,47 +296,50 @@ def main():
     print(f"Início: {datetime.now().strftime('%H:%M:%S')}")
     print()
 
-    df = pd.read_excel(CAMINHO_LOCAL, sheet_name=SHEET_NAME)
-    df = df.dropna(how='all')          # remove linhas completamente vazias
-    df = df.reset_index(drop=False)    # mantém o índice original para o nº da linha no Excel
-
     em = conectar_e_logar()
+    try:
+        return _analisar_com(em)
+    finally:
+        em.terminate()
+
+
+def _analisar_com(em):
+    """Corpo da analise. Usa o emulador recebido e nao o encerra."""
+    df = pd.read_excel(CAMINHO_LOCAL, sheet_name=SHEET_NAME)
+    df = df.dropna(how='all')
+    df = df.reset_index(drop=False)
 
     resultados = []
 
-    try:
-        entrar_na_consulta(em)
+    entrar_na_consulta(em)
 
-        for _, row in df.iterrows():
+    for _, row in df.iterrows():
 
-            # Pula linhas onde UO_COD está vazio (fim da planilha ou linha vazia)
-            if pd.isna(row['UO_COD']):
-                continue
+        # Pula linhas onde UO_COD está vazio (fim da planilha ou linha vazia)
+        if pd.isna(row['UO_COD']):
+            continue
 
-            linha_excel = int(row['index']) + 2  # +2: cabeçalho na linha 1
+        linha_excel = int(row['index']) + 2  # +2: cabeçalho na linha 1
 
-            data_row = montar_data_row(row)
+        data_row = montar_data_row(row)
 
-            # Somente linhas de anulação consomem saldo; suplementações não.
-            if data_row['orientacao'].lower() != 'anular':
-                print(f"{descrever(data_row, linha_excel)} -> Suplementar (sem verificação)")
-                continue
+        # Somente linhas de anulação consomem saldo; suplementações não.
+        if data_row['orientacao'].lower() != 'anular':
+            print(f"{descrever(data_row, linha_excel)} -> Suplementar (sem verificação)")
+            continue
 
-            status, saldo, retorno = consultar_dotacao(em, data_row)
+        status, saldo, retorno = consultar_dotacao(em, data_row)
 
-            saldo_txt = f"{saldo:.2f}" if saldo is not None else "-"
-            print(f"{descrever(data_row, linha_excel)}; Saldo: {saldo_txt} -> {status}")
+        saldo_txt = f"{saldo:.2f}" if saldo is not None else "-"
+        print(f"{descrever(data_row, linha_excel)}; Saldo: {saldo_txt} -> {status}")
 
-            resultados.append({
-                'linha': linha_excel,
-                'descricao': descrever(data_row, linha_excel),
-                'status': status,
-                'saldo': saldo,
-                'retorno': retorno,
-            })
-
-    finally:
-        em.terminate()
+        resultados.append({
+            'linha': linha_excel,
+            'descricao': descrever(data_row, linha_excel),
+            'status': status,
+            'saldo': saldo,
+            'retorno': retorno,
+        })
 
     # -----------------------------------------------------------------------
     # Relatório final

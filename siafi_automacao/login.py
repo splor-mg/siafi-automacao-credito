@@ -14,6 +14,7 @@ from fluxo_tipo_3 import tipo_3
 from fluxo_tipo_4 import tipo_4
 from utils_siafi import finalizar_documento
 import resultado
+import analise_saldo
 from relato import relato
 
 load_dotenv()
@@ -31,6 +32,54 @@ SIAFI_VISIVEL = os.getenv('SIAFI_VISIVEL', 'true').lower() == 'true'
 CONEXAO_TENTATIVAS = int(os.getenv('CONEXAO_TENTATIVAS', '10'))
 
 DIR_SCRIPTS = os.path.dirname(os.path.abspath(__file__))
+
+#Nome da aba na planilha Excel onde estão os dados a serem processados
+SHEET_NAME = 'ROBO'
+
+
+def recalcular_no_excel(caminho):
+    """Faz o proprio Excel abrir, recalcular e salvar a planilha.
+
+    A aba ROBO nao guarda dados: ela e derivada por formula da aba
+    'PREENCHER AQUI' — VLOOKUP contra a tabela qdd, concatenacao do codigo
+    SIAFI completo, derivacao condicional de elemento e categoria. O openpyxl
+    escreve os dados de origem mas NAO tem motor de formulas, entao os valores
+    em cache da aba ROBO ficam vazios ate alguem abrir o arquivo no Excel.
+
+    Era exatamente isso que a antiga confirmacao manual fazia: clicar em
+    'Habilitar Edicao' (sair do Modo de Exibicao Protegido) e salvar. Aqui o
+    Excel faz o servico sozinho, via COM — mesma engine, mesmos resultados.
+    """
+    win = subprocess.check_output(['wslpath', '-w', caminho]).decode().strip()
+    ps = (
+        "$ErrorActionPreference='Stop';"
+        "try {"
+        "  $xl = New-Object -ComObject Excel.Application;"
+        "  $xl.Visible = $false; $xl.DisplayAlerts = $false;"
+        "  $xl.AutomationSecurity = 3;"
+        f"  $wb = $xl.Workbooks.Open('{win}');"
+        "  $xl.CalculateFullRebuild(); $wb.Save(); $wb.Close($true); $xl.Quit();"
+        "  Write-Output 'OK'"
+        "} catch { Write-Output ('ERRO: ' + $_.Exception.Message) }"
+    )
+    saida = subprocess.run(['powershell.exe', '-NoProfile', '-Command', ps],
+                           capture_output=True, text=True).stdout.strip()
+    if not saida.endswith('OK'):
+        print(f"[erro] Excel nao recalculou: {saida}")
+        return False
+    return True
+
+
+def linhas_prontas(caminho):
+    """Quantas linhas a aba ROBO entrega de fato.
+
+    E a mesma leitura que o robo faz depois. Zero aqui significa que o
+    recalculo nao surtiu efeito: sem esta checagem o laco de processamento nao
+    rodaria nenhuma vez e o robo estouraria adiante, em finalizar_documento(),
+    com data_row indefinido.
+    """
+    df = pd.read_excel(caminho, sheet_name=SHEET_NAME)
+    return int(df['UO_COD'].notna().sum())
 
 # ---------------------------------------------------------------------------
 # Etapa 1 — Consolidação das planilhas
@@ -58,15 +107,34 @@ relato('planilha', 'Planilhas consolidadas, validação OK.')
 CAMINHO_LOCAL = os.path.realpath(os.path.join(DIR_SCRIPTS, '..', 'data', 'copia.xlsm'))
 
 # ---------------------------------------------------------------------------
-# Etapa 2 — Conferência manual no Excel
+# Etapa 2 — Recálculo das fórmulas e revisão
 #
 # Acionado pelo Telegram nao ha ninguem para abrir o Excel nem digitar 's', e
 # como servico do systemd a entrada padrao e /dev/null: o input() estouraria
 # com EOFError. Nesse caminho a conferencia precisa ter sido feita ANTES de
 # por a planilha na pasta de origem. O duplo-clique no .bat segue pedindo o 's'.
 # ---------------------------------------------------------------------------
+print()
+print("Recalculando as fórmulas da planilha no Excel...")
+if not recalcular_no_excel(CAMINHO_LOCAL):
+    relato('erro', 'Não consegui fazer o Excel recalcular a planilha. A aba '
+                   'ROBO é toda derivada por fórmula e ficaria vazia, então o '
+                   'robô parou antes de tocar no SIAFI.')
+    sys.exit(1)
+
+_prontas = linhas_prontas(CAMINHO_LOCAL)
+if _prontas == 0:
+    relato('erro', 'A aba ROBO ficou vazia depois do recálculo. Confira se a '
+                   'aba PREENCHER AQUI foi realmente preenchida. Nada foi '
+                   'enviado ao SIAFI.')
+    sys.exit(1)
+print(f"{_prontas} linha(s) prontas na aba ROBO.")
+# Sem o campo 'linhas': aqui o robo sabe a contagem, nao quais linhas
+# sao — diferente do robo de cota, que lista os numeros.
+relato('pendentes', f'{_prontas} linha(s) a processar')
+
 if DESASSISTIDO:
-    print("Modo desassistido: seguindo sem a conferência manual no Excel.")
+    print("Modo desassistido: seguindo sem a revisão manual no Excel.")
 else:
     xlsm_win = subprocess.check_output(['wslpath', '-w', CAMINHO_LOCAL]).decode().strip()
     subprocess.Popen(['explorer.exe', xlsm_win], stdin=subprocess.DEVNULL)
@@ -86,38 +154,7 @@ else:
     )
 
 # ---------------------------------------------------------------------------
-# Etapa 3 — Análise de saldo das dotações a anular
-# ---------------------------------------------------------------------------
-print()
-print("Iniciando a análise de saldo das dotações...")
-print()
-
-try:
-    subprocess.run(
-        ['python3', os.path.join(DIR_SCRIPTS, 'analise_saldo.py')],
-        check=True
-    )
-except subprocess.CalledProcessError:
-    print()
-    print("=" * 70)
-    print("  PROCESSO INTERROMPIDO NA ANÁLISE DE SALDO")
-    print("=" * 70)
-    print("  Nenhuma solicitação foi enviada ao SIAFI.")
-    print("  Corrija as dotações apontadas acima no copia.xlsm (ou nas")
-    print("  planilhas de origem) e execute o robô novamente.")
-    print("=" * 70)
-    print()
-    relato('aviso', 'Análise de saldo reprovada: NENHUMA solicitação foi enviada '
-                    'ao SIAFI. Corrija as dotações apontadas e acione de novo. '
-                    'Use /log para ver quais.')
-    sys.exit(2)
-
-print()
-print("Análise de saldo aprovada. Iniciando as solicitações no SIAFI...")
-print()
-
-# ---------------------------------------------------------------------------
-# Etapa 4 — Solicitações no SIAFI
+# Etapa 3 — Login no SIAFI (uma sessão só, usada tambem pela analise)
 # ---------------------------------------------------------------------------
 agora = datetime.now()
 
@@ -132,9 +169,6 @@ unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 day = datetime.today().strftime("%d")
 month = datetime.today().strftime("%m")
 year = datetime.today().strftime("%Y")
-
-#Nome da aba na planilha Excel onde estão os dados a serem processados
-SHEET_NAME = 'ROBO'
 
 em = None
 for _tentativa in range(1, CONEXAO_TENTATIVAS + 1):
@@ -234,7 +268,48 @@ em.send_enter()
 em.wait_for_field()
 # Fim do login
 
-# Leitura da Planilha
+# ---------------------------------------------------------------------------
+# Etapa 4 — Análise de saldo, no MESMO emulador ja logado
+#
+# Antes a analise rodava como subprocesso e abria a sua propria sessao no
+# SIAFI; o login.py abria outra logo depois, com o mesmo usuario. Enquanto o
+# mainframe nao liberava a primeira, a segunda podia ser recusada com
+# 'UNABLE TO ESTABLISH SESSION'. Com um emulador so, essa corrida some.
+# ---------------------------------------------------------------------------
+print()
+print("Iniciando a análise de saldo das dotações...")
+print()
+
+if analise_saldo.analisar(em) != 0:
+    print()
+    print("=" * 70)
+    print("  PROCESSO INTERROMPIDO NA ANÁLISE DE SALDO")
+    print("=" * 70)
+    print("  Nenhuma solicitação foi enviada ao SIAFI.")
+    print("=" * 70)
+    print()
+    relato('aviso', 'Análise de saldo reprovada: NENHUMA solicitação foi enviada '
+                    'ao SIAFI. Corrija as dotações apontadas e acione de novo. '
+                    'Use /log para ver quais.')
+    em.terminate()
+    sys.exit(2)
+
+# A analise deixou o terminal nas telas de consulta. Voltar ao ponto de partida
+# do laco de solicitacoes e obrigatorio: digitar numa tela errada do SIAFI e o
+# pior desfecho possivel, entao aqui e abortar, nao seguir na duvida.
+if not analise_saldo.voltar_ao_menu(em):
+    relato('erro', 'Não consegui voltar ao menu do SIAFI depois da análise de '
+                   'saldo. O robô parou por segurança, antes de enviar '
+                   'qualquer solicitação.')
+    em.terminate()
+    sys.exit(1)
+
+print("Análise de saldo aprovada. Iniciando as solicitações no SIAFI...")
+print()
+
+# ---------------------------------------------------------------------------
+# Etapa 5 — Solicitações
+# ---------------------------------------------------------------------------
 df = pd.read_excel(CAMINHO_LOCAL, sheet_name=SHEET_NAME)
 df = df.dropna(how='all')
 df = df.reset_index(drop=False)

@@ -207,3 +207,7 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
+# Artefatos de execucao do robo (log, relato, lock, estado)
+data/logs/
+data/.ultima_execucao
+data/.robo.lock

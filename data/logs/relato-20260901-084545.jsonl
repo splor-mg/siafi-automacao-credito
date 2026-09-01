@@ -1,5 +1,0 @@
-{"tipo": "planilha", "ts": "2026-09-01T08:45:49", "texto": "Planilhas consolidadas, validação OK."}
-{"tipo": "pendentes", "ts": "2026-09-01T08:45:54", "texto": "1 linha(s) a processar", "linhas": [1]}
-{"tipo": "login", "ts": "2026-09-01T08:47:04", "texto": "Login no SIAFI realizado"}
-{"tipo": "documento", "ts": "2026-09-01T08:47:10", "texto": "UO 1251 | linha 2 | OK | doc 0000094", "linha": 2, "uo": "1251", "nr_doc": "0000094", "ok": true}
-{"tipo": "fim", "ts": "2026-09-01T08:47:10", "texto": "Fluxo concluído."}

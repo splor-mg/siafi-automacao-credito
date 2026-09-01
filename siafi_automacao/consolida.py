@@ -22,6 +22,9 @@ DATA_DIR = os.path.realpath(os.path.join(DIR_SCRIPTS, '..', 'data'))
 # copia.xlsm   -> gerado a cada execução a partir do modelo, fora do Git
 MODELO_PATH = os.path.join(DATA_DIR, 'modelo.xlsm')
 XLSM_PATH = os.path.join(DATA_DIR, 'copia.xlsm')
+# Manifesto do que foi tirado das pastas de origem nesta execucao, para o
+# login.py conseguir devolver se a analise de saldo reprovar.
+MOVIDOS_PATH = os.path.join(DATA_DIR, '.movidos')
 
 SHEET_ENTRADA = 'PREENCHER AQUI'
 
@@ -179,10 +182,20 @@ def combine_excel_files(folder_paths, output_file, processed_folder):
     # -----------------------------------------------------------------------
     # 5. Só agora move os arquivos de origem para 'Realizados'
     # -----------------------------------------------------------------------
+    movidos = []
     for file_path, filename, _ in lidos:
         destino = destino_sem_colisao(processed_folder, filename)
         shutil.move(file_path, destino)
+        movidos.append((destino, file_path))
         print(f"Arquivo movido para: {destino}")
+
+    # Guarda de onde cada arquivo veio. Se a analise de saldo reprovar, nada
+    # foi enviado ao SIAFI e os originais precisam voltar para a fila — sem
+    # isto, a pessoa corrigiria a dotacao, acionaria de novo e receberia
+    # 'NENHUMA PLANILHA ENCONTRADA PARA PROCESSAR'.
+    with open(MOVIDOS_PATH, 'w', encoding='utf-8') as f:
+        for destino, origem in movidos:
+            f.write(f'{destino}\t{origem}\n')
 
 
 if __name__ == '__main__':

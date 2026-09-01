@@ -211,3 +211,4 @@ pyrightconfig.json
 data/logs/
 data/.ultima_execucao
 data/.robo.lock
+data/.movidos

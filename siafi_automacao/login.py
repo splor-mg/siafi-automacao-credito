@@ -15,6 +15,7 @@ from fluxo_tipo_4 import tipo_4
 from utils_siafi import finalizar_documento
 import resultado
 import analise_saldo
+from arquivos import devolver_planilhas_de_origem
 from relato import relato
 
 load_dotenv()
@@ -281,9 +282,17 @@ if analise_saldo.analisar(em) != 0:
     print("  Nenhuma solicitação foi enviada ao SIAFI.")
     print("=" * 70)
     print()
-    relato('aviso', 'Análise de saldo reprovada: NENHUMA solicitação foi enviada '
-                    'ao SIAFI. Corrija as dotações apontadas e acione de novo. '
-                    'Use /log para ver quais.')
+    devolvidos = devolver_planilhas_de_origem(
+        os.path.realpath(os.path.join(DIR_SCRIPTS, '..', 'data', '.movidos')))
+    if devolvidos:
+        aviso = ('Análise de saldo reprovada: NENHUMA solicitação foi enviada ao '
+                 'SIAFI. As planilhas voltaram para a pasta de origem — corrija '
+                 'as dotações acima e acione de novo.')
+    else:
+        aviso = ('Análise de saldo reprovada: NENHUMA solicitação foi enviada ao '
+                 'SIAFI. Não consegui devolver as planilhas para a pasta de '
+                 'origem; veja em Realizados antes de acionar de novo.')
+    relato('aviso', aviso)
     em.terminate()
     sys.exit(2)
 

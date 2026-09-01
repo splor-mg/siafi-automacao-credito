@@ -18,6 +18,8 @@ import time
 from datetime import datetime
 
 import pandas as pd
+
+from relato import relato
 from dotenv import load_dotenv
 from py3270 import Emulator
 
@@ -366,6 +368,20 @@ def _analisar_com(em):
                 print(f"      mensagem SIAFI: {r['retorno']}")
         print("=" * 70)
         print()
+
+        # O grupo precisa saber QUAIS dotacoes reprovaram. Antes so chegava a
+        # frase 'corrija as dotacoes apontadas' — apontadas so no log.
+        LIMITE = 8
+        linhas = []
+        for r in problemas[:LIMITE]:
+            detalhe = f"[{r['status']}] {r['descricao']}"
+            if r['saldo'] is not None:
+                detalhe += f" | saldo disponível: {r['saldo']:.2f}"
+            linhas.append(detalhe)
+        if len(problemas) > LIMITE:
+            linhas.append(f'... e mais {len(problemas) - LIMITE}, veja /log')
+        relato('erro', 'Dotações sem saldo suficiente:\n' + '\n'.join(linhas))
+
         return 1
 
     print()

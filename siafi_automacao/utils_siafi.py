@@ -18,6 +18,14 @@ def finalizar_documento(em, uo, uo_anterior, data_row):
     em.wait_for_field()
     time.sleep(1)
 
+    if em.string_get(1, 1, 46).strip() != "0011-REGISTRO EFETUADO.":
+        print(f"Erro ao finalizar documento da UO {uo_anterior}")
+        retorno = "Erro"
+        nr_doc = ""
+        resultado.registrar_erro(uo_anterior)
+        print(em.string_get(1, 1, 46).strip())
+    else:
+
     saldo_contabil = em.string_get(4, 19, 46).strip()
     if saldo_contabil == 'Inconsistencia no Registro da Contabilizacao':
         print(f"Erro de saldo contábil na solicitação da UO {uo_anterior}")

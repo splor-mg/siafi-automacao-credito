@@ -24,7 +24,6 @@ def finalizar_documento(em, uo, uo_anterior, data_row):
         nr_doc = ""
         resultado.registrar_erro(uo_anterior)
         print(em.string_get(1, 1, 46).strip())
-    else:
 
     saldo_contabil = em.string_get(4, 19, 46).strip()
     if saldo_contabil == 'Inconsistencia no Registro da Contabilizacao':

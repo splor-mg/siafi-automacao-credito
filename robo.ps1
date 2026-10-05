@@ -49,6 +49,14 @@ elseif ($roboExit -eq 2) {
     Write-Host "  Corrija as dotacoes apontadas acima e rode novamente."       -ForegroundColor Yellow
     Write-Host "============================================================" -ForegroundColor Yellow
 }
+elseif ($roboExit -eq 3) {
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Yellow
+    Write-Host "  Senha do SIAFI expirada."                                   -ForegroundColor Yellow
+    Write-Host "  Atualize a senha no SIAFI e grave a nova no arquivo .env."  -ForegroundColor Yellow
+    Write-Host "  Nenhuma solicitacao foi enviada ao SIAFI."                  -ForegroundColor Yellow
+    Write-Host "============================================================" -ForegroundColor Yellow
+}
 elseif ($roboExit -ne 0) {
     Write-Host ""
     Write-Host "O robo encerrou com erro (codigo $roboExit)." -ForegroundColor Red

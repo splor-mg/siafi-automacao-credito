@@ -94,6 +94,35 @@ def linhas_prontas(caminho):
     df = pd.read_excel(caminho, sheet_name=SHEET_NAME)
     return int(df['UO_COD'].notna().sum())
 
+
+def senha_expirada(em):
+    """Procura o aviso de senha expirada em qualquer linha da tela.
+
+    Varre a tela inteira em vez de apostar numa linha fixa: errar a linha faria
+    o robo seguir adiante e morrer depois em 'Nao foi possivel fazer login',
+    escondendo o motivo real. Em caso de falha de leitura devolve False, para
+    nao trocar um diagnostico ruim por uma excecao no meio do login.
+    """
+    try:
+        tela = '\n'.join(em.string_get(l, 1, 80) for l in range(1, 25))
+    except Exception:
+        return False
+    return 'SENHA EXPIRADA' in tela.upper()
+
+
+def abortar_senha_expirada(em):
+    """Encerra o robo explicando o que fazer. Codigo 3, tratado no robo.ps1."""
+    print()
+    print("=" * 70)
+    print("Senha expirada. Abra o SIAFI manualmente e atualize sua senha.")
+    print("Apos isso, salve a nova senha no arquivo .env e execute o script novamente.")
+    print("=" * 70)
+    relato('erro', 'Senha do SIAFI expirada. Atualize a senha no SIAFI '
+                   'manualmente, grave a nova no .env e acione de novo. '
+                   'Nada foi enviado ao SIAFI.')
+    em.terminate()
+    sys.exit(3)
+
 # ---------------------------------------------------------------------------
 # Etapa 1 — Consolidação das planilhas
 # ---------------------------------------------------------------------------
@@ -192,6 +221,10 @@ em.fill_field(20, 13, usuario, 8)
 em.fill_field(21, 13, senha, 8)
 em.send_enter()
 
+time.sleep(1)
+if senha_expirada(em):
+    abortar_senha_expirada(em)
+
 # Loop: navega pelas telas até encontrar a mensagem de sucesso
 max_tentativas = 10
 tentativas = 0
@@ -217,6 +250,12 @@ while tentativas < max_tentativas:
         em.send_enter()
 
     tentativas += 1
+
+    # Fora do try de proposito: o 'except:' acima captura BaseException e
+    # engoliria o SystemExit de abortar_senha_expirada(). O aviso pode aparecer
+    # so depois de um Enter, numa tela intermediaria.
+    if senha_expirada(em):
+        abortar_senha_expirada(em)
 
 if tentativas == max_tentativas:
     print("Não foi possível fazer login após várias tentativas.")

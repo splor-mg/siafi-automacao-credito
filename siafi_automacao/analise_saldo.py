@@ -140,7 +140,6 @@ def entrar_na_consulta(em):
 
     abrir_tela_dotacao(em)
 
-
 def abrir_tela_dotacao(em):
     """Abre (ou reabre) a tela de consulta de dotação."""
     em.fill_field(21, 19, '07', 2)
@@ -215,6 +214,18 @@ def consultar_dotacao(em, data_row):
 # Montagem da linha
 # ---------------------------------------------------------------------------
 
+def _cod(valor, tamanho=0):
+    """Codigo da planilha como texto; vazio quando a celula esta em branco.
+
+    So para as colunas que a consulta de dotacao NAO informa (subprojeto,
+    categoria, elemento). Nas que entram na consulta a conversao segue estrita:
+    ali uma celula vazia precisa falhar, nao virar busca em branco no SIAFI.
+    """
+    if pd.isna(valor):
+        return ''
+    return str(int(valor)).zfill(tamanho)
+
+
 def montar_data_row(row):
     """Extrai e normaliza os campos necessários para a consulta de dotação."""
     data_row = {}
@@ -224,11 +235,11 @@ def montar_data_row(row):
     data_row['funcao']      = str(int(row['FUNCAO_COD'])).zfill(2)
     data_row['subfuncao']   = str(int(row['SUBFUNCAO_COD'])).zfill(3)
     data_row['programa']    = str(int(row['PROGRAMA_COD'])).zfill(3)
-    data_row['subprojeto']  = str(int(row['SUBPROJETO_COD']))
-    data_row['categoria']   = str(int(row['CATEGORIA_COD']))
+    data_row['subprojeto']  = _cod(row['SUBPROJETO_COD'])
+    data_row['categoria']   = _cod(row['CATEGORIA_COD'])
     data_row['grupo']       = str(int(row['GRUPO_COD']))
     data_row['modalidade']  = str(int(row['MODALIDADE_COD'])).zfill(2)
-    data_row['elemento']    = str(int(row['ELEMENTO_COD'])).zfill(2)
+    data_row['elemento']    = _cod(row['ELEMENTO_COD'], 2)
     data_row['iag']         = str(int(row['IPG_COD']))
     data_row['fonte']       = str(int(row['FONTE_COD'])).zfill(2)
     data_row['procedencia'] = str(int(row['IPU_COD']))
@@ -323,12 +334,19 @@ def _analisar_com(em):
 
         linha_excel = int(row['index']) + 2  # +2: cabeçalho na linha 1
 
-        data_row = montar_data_row(row)
-
         # Somente linhas de anulação consomem saldo; suplementações não.
-        if data_row['orientacao'].lower() != 'anular':
-            print(f"{descrever(data_row, linha_excel)} -> Suplementar (sem verificação)")
+        #
+        # O teste vem ANTES do montar_data_row de proposito: linha de
+        # suplementacao pode ter coluna vazia que a analise nem usa — o
+        # ELEMENTO_COD das modalidades de transferencia (46, 76) e o caso real —
+        # e o int(NaN) derrubava o robo montando uma linha que seria descartada
+        # na instrucao seguinte.
+        if str(row['ORIENTACAO']).strip().lower() != 'anular':
+            print(f"linha {linha_excel} | UO: {row['UO_COD']:.0f}; "
+                  f"Ação: {row['ACAO_COD']:.0f} -> Suplementar (sem verificação)")
             continue
+
+        data_row = montar_data_row(row)
 
         status, saldo, retorno = consultar_dotacao(em, data_row)
 

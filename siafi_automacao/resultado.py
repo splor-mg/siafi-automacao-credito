@@ -37,22 +37,28 @@ def registrar_ok(uo, nr_doc):
     _registrar(uo, 'ok', nr_doc)
 
 
-def registrar_erro(uo):
-    _registrar(uo, 'erro', '')
+def registrar_erro(uo, motivo=''):
+    _registrar(uo, 'erro', '', motivo)
 
 
-def _registrar(uo, status, nr_doc):
+def _registrar(uo, status, nr_doc, motivo=''):
     if _ultima_linha is None:
         # Documento encerrado antes de qualquer linha ter sido processada:
         # não há onde gravar, mas o terminal já informou o desfecho.
         return
     _resultados.append((_ultima_linha, uo, status, nr_doc))
 
-    detalhe = f'doc {nr_doc}' if status == 'ok' else 'nao registrado no SIAFI'
+    if status == 'ok':
+        detalhe = f'doc {nr_doc}' if nr_doc else 'registrado (número não lido na tela)'
+    else:
+        # Quem esta no grupo do Telegram nao ve o console: o motivo real da
+        # recusa precisa vir no proprio texto do relato.
+        detalhe = motivo or 'nao registrado no SIAFI'
+
     relato('documento',
            f'UO {uo} | linha {_ultima_linha} | {status.upper()} | {detalhe}',
            linha=_ultima_linha, uo=str(uo), nr_doc=str(nr_doc or ''),
-           ok=(status == 'ok'))
+           motivo=motivo, ok=(status == 'ok'))
 
 
 def houve_erro():

@@ -108,6 +108,8 @@ def tipo_2(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
             em.fill_field(linha, 64, data_row['valor'], 15) # valor
 
         elif data_row['orientacao'] == 'Anular':
+            # Guarda: este tipo so suplementa, e o linhas.py reprova a
+            # planilha antes do envio se vier anulacao aqui.
             break
 
 

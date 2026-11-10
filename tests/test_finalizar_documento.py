@@ -54,6 +54,8 @@ def sem_espera_e_sem_historico(monkeypatch):
     """Zera o estado global do resultado e os sleeps de espera do mainframe."""
     monkeypatch.setattr(utils_siafi.time, 'sleep', lambda _s: None)
     monkeypatch.setattr(resultado, '_resultados', [])
+    monkeypatch.setattr(resultado, '_confirmacao_enviada', False)
+    monkeypatch.setattr(resultado, '_sem_resposta', None)
     resultado.marcar_linha(3)
     yield
     resultado.marcar_linha(None)
@@ -227,3 +229,92 @@ def test_outra_recusa_de_anulacao_repassa_a_tela_sem_chutar_a_causa(capsys, monk
     saida = capsys.readouterr().out
     assert 'cota' not in saida.lower()
     assert 'DOTACAO BLOQUEADA' in saida
+
+
+# ---------------------------------------------------------------------------
+# A fronteira da confirmacao
+#
+# Quando o envio para no meio, o login.py so devolve as planilhas para a fila
+# se nenhuma confirmacao (PF5) chegou a ser enviada: ate ali e certo que nada
+# foi registrado no SIAFI. Errar para menos deixa a planilha presa em
+# Realizados; errar para mais faz o proximo acionamento duplicar documento.
+# ---------------------------------------------------------------------------
+
+class TecladoTravado(Exception):
+    """Faz as vezes do py3270.CommandError('Keyboard locked')."""
+
+
+class EmuladorQueNaoAvanca(EmuladorFalso):
+    """O SIAFI recusou as linhas digitadas e nao foi para a tela da
+    justificativa: a posicao (11, 11) e protegida e o emulador trava."""
+
+    def fill_field(self, linha, coluna, valor, tamanho):
+        raise TecladoTravado('Keyboard locked')
+
+
+class EmuladorQueCaiDepoisDoPF5(EmuladorFalso):
+    """A sessao cai entre a confirmacao e a leitura da resposta — o que houve
+    em 22/10/2026 as 13:57 (BrokenPipeError lendo a linha 6)."""
+
+    def string_get(self, linha, coluna, tamanho):
+        if 5 in self.pf_enviados:
+            raise BrokenPipeError('emulador caiu')
+        return super().string_get(linha, coluna, tamanho)
+
+
+def test_parada_antes_do_pf5_nao_conta_como_confirmacao():
+    em = EmuladorQueNaoAvanca(TELA_REGISTRO_EFETUADO)
+
+    with pytest.raises(TecladoTravado):
+        finalizar_documento(em, '1451', '1631', {})
+
+    assert em.pf_enviados == []
+    assert not resultado.houve_confirmacao()
+    assert resultado.confirmacao_sem_resposta() is None
+
+
+def test_queda_depois_do_pf5_deixa_a_confirmacao_sem_resposta():
+    """O documento pode ter sido registrado: o robo nao sabe, e precisa dizer
+    qual UO conferir no SIAFI."""
+    em = EmuladorQueCaiDepoisDoPF5(TELA_REGISTRO_EFETUADO)
+
+    with pytest.raises(BrokenPipeError):
+        finalizar_documento(em, '1451', '1631', {})
+
+    assert resultado.houve_confirmacao()
+    assert resultado.confirmacao_sem_resposta() == '1631'
+    assert resultado._resultados == []
+
+
+def test_documento_registrado_conta_como_confirmacao_com_resposta():
+    finalizar_documento(EmuladorFalso(TELA_REGISTRO_EFETUADO), '1451', '1631', {})
+
+    assert resultado.houve_confirmacao()
+    assert resultado.confirmacao_sem_resposta() is None
+
+
+def test_documento_recusado_tambem_conta_como_confirmacao(monkeypatch):
+    """Recusa nao devolve planilha sozinha: o resumo manda conferir a UO no
+    SIAFI antes de reprocessar."""
+    import analise_saldo
+    monkeypatch.setattr(analise_saldo.time, 'sleep', lambda _s: None)
+
+    finalizar_documento(EmuladorFalso(TELA_ERRO_DE_ANULACAO), '1451', '2061', {})
+
+    assert resultado.houve_confirmacao()
+    assert resultado.confirmacao_sem_resposta() is None
+
+
+def test_recusa_copia_a_tela_inteira_para_o_log(capsys, monkeypatch):
+    """A linha 1 nem sempre conta a historia toda: na recusa de 05/11 a
+    inconsistencia contabil estava na linha 4."""
+    import analise_saldo
+    monkeypatch.setattr(analise_saldo.time, 'sleep', lambda _s: None)
+
+    finalizar_documento(EmuladorFalso(TELA_PENDENTE_COM_INCONSISTENCIA), '2061', '1631', {})
+
+    saida = capsys.readouterr().out
+    assert 'TELA DO SIAFI: documento da UO 1631 recusado' in saida
+    assert '  01| 0017-TECLE PF5 PARA CONFIRMAR OU PF2 PARA ANULAR' in saida
+    assert '  06| Nr. Documento:' in saida
+

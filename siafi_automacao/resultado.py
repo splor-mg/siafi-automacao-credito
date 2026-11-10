@@ -1,5 +1,3 @@
-from relato import relato
-
 """
 Registro do desfecho de cada documento enviado ao SIAFI, gravado na aba ROBO.
 
@@ -19,6 +17,8 @@ import os
 
 from openpyxl import load_workbook
 
+from relato import relato
+
 SHEET_NAME = 'ROBO'
 COL_PROGRESSO = 21  # coluna U
 COL_SIAFI = 22      # coluna V
@@ -26,11 +26,40 @@ COL_SIAFI = 22      # coluna V
 _ultima_linha = None
 _resultados = []  # (linha_excel, uo, status, nr_doc)
 
+# A confirmacao (PF5) de algum documento ja foi enviada ao SIAFI nesta execucao
+_confirmacao_enviada = False
+# UO do documento cuja confirmacao foi enviada e o desfecho ainda nao foi lido
+_sem_resposta = None
+
 
 def marcar_linha(linha_excel):
     """Registra qual foi a última linha da planilha processada."""
     global _ultima_linha
     _ultima_linha = linha_excel
+
+
+def confirmacao_enviada(uo):
+    """O finalizar_documento vai teclar o PF5 que confirma o documento da UO.
+
+    E a fronteira entre 'com certeza nada foi registrado' e 'pode ter sido':
+    linha digitada e nao confirmada nao vira documento no SIAFI, mas do PF5 em
+    diante ele pode ter registrado mesmo que o robo quebre antes de ler a
+    resposta. O login.py usa isto para decidir se e seguro devolver as
+    planilhas para a fila quando o envio para no meio.
+    """
+    global _confirmacao_enviada, _sem_resposta
+    _confirmacao_enviada = True
+    _sem_resposta = uo
+
+
+def houve_confirmacao():
+    """Algum documento chegou a ser confirmado (registrado, recusado ou nao)?"""
+    return _confirmacao_enviada
+
+
+def confirmacao_sem_resposta():
+    """UO cujo PF5 foi enviado sem que o desfecho fosse lido; None se nao ha."""
+    return _sem_resposta
 
 
 def registrar_ok(uo, nr_doc):
@@ -42,6 +71,9 @@ def registrar_erro(uo, motivo=''):
 
 
 def _registrar(uo, status, nr_doc, motivo=''):
+    global _sem_resposta
+    _sem_resposta = None  # o desfecho foi lido
+
     if _ultima_linha is None:
         # Documento encerrado antes de qualquer linha ter sido processada:
         # não há onde gravar, mas o terminal já informou o desfecho.

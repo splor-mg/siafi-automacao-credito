@@ -6,17 +6,19 @@ from dotenv import load_dotenv
 from py3270 import Emulator
 from datetime import datetime
 import pandas as pd
-import openpyxl
 import time
 from fluxo_tipo_1 import tipo_1
 from fluxo_tipo_2 import tipo_2
 from fluxo_tipo_3 import tipo_3
 from fluxo_tipo_4 import tipo_4
-from utils_siafi import finalizar_documento
+from utils_siafi import finalizar_documento, TelaDesconhecida
 import resultado
 import analise_saldo
 from arquivos import devolver_planilhas_de_origem
+from excel import recalcular_no_excel
+from linhas import ler_linhas
 from relato import relato
+from tela import imprimir_tela
 
 load_dotenv()
 ONEDRIVE_BASE = os.getenv('ONEDRIVE_BASE')
@@ -30,69 +32,15 @@ SIAFI_VISIVEL = os.getenv('SIAFI_VISIVEL', 'true').lower() == 'true'
 CONEXAO_TENTATIVAS = int(os.getenv('CONEXAO_TENTATIVAS', '10'))
 
 DIR_SCRIPTS = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.realpath(os.path.join(DIR_SCRIPTS, '..', 'data'))
+CAMINHO_LOCAL = os.path.join(DATA_DIR, 'copia.xlsm')
+# Manifesto gravado pelo consolida.py: de onde saiu cada planilha de origem.
+MOVIDOS_PATH = os.path.join(DATA_DIR, '.movidos')
+
+SIAFI_HOST = 'bhmvsb.prodemge.gov.br'
 
 #Nome da aba na planilha Excel onde estão os dados a serem processados
 SHEET_NAME = 'ROBO'
-
-
-# Como servico do systemd o PATH nao traz os diretorios do Windows, entao
-# 'powershell.exe' nao e encontrado pelo nome — mesmo com o interop do WSL
-# funcionando normalmente. Pelo caminho absoluto funciona.
-_PS_PADRAO = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
-POWERSHELL = (_PS_PADRAO if os.path.exists(_PS_PADRAO)
-              else (shutil.which('powershell.exe') or 'powershell.exe'))
-
-
-def recalcular_no_excel(caminho):
-    """Faz o proprio Excel abrir, recalcular e salvar a planilha.
-
-    A aba ROBO nao guarda dados: ela e derivada por formula da aba
-    'PREENCHER AQUI' — VLOOKUP contra a tabela qdd, concatenacao do codigo
-    SIAFI completo, derivacao condicional de elemento e categoria. O openpyxl
-    escreve os dados de origem mas NAO tem motor de formulas, entao os valores
-    em cache da aba ROBO ficam vazios ate alguem abrir o arquivo no Excel.
-
-    Era exatamente isso que a antiga confirmacao manual fazia: clicar em
-    'Habilitar Edicao' (sair do Modo de Exibicao Protegido) e salvar. Aqui o
-    Excel faz o servico sozinho, via COM — mesma engine, mesmos resultados.
-    """
-    win = subprocess.check_output(['wslpath', '-w', caminho]).decode().strip()
-    ps = (
-        "$ErrorActionPreference='Stop';"
-        "try {"
-        "  $xl = New-Object -ComObject Excel.Application;"
-        "  $xl.Visible = $false; $xl.DisplayAlerts = $false;"
-        "  $xl.AutomationSecurity = 3;"
-        f"  $wb = $xl.Workbooks.Open('{win}');"
-        "  $xl.CalculateFullRebuild(); $wb.Save(); $wb.Close($true); $xl.Quit();"
-        "  Write-Output 'OK'"
-        "} catch { Write-Output ('ERRO: ' + $_.Exception.Message) }"
-    )
-    try:
-        saida = subprocess.run([POWERSHELL, '-NoProfile', '-Command', ps],
-                               capture_output=True, text=True).stdout.strip()
-    except OSError as e:
-        # Sem isto o FileNotFoundError subia como traceback e o grupo recebia
-        # 'FALHOU' com rodape vazio, sem nenhuma pista.
-        print(f"[erro] nao consegui executar o PowerShell ({POWERSHELL}): {e}")
-        return False
-
-    if not saida.endswith('OK'):
-        print(f"[erro] Excel nao recalculou: {saida}")
-        return False
-    return True
-
-
-def linhas_prontas(caminho):
-    """Quantas linhas a aba ROBO entrega de fato.
-
-    E a mesma leitura que o robo faz depois. Zero aqui significa que o
-    recalculo nao surtiu efeito: sem esta checagem o laco de processamento nao
-    rodaria nenhuma vez e o robo estouraria adiante, em finalizar_documento(),
-    com data_row indefinido.
-    """
-    df = pd.read_excel(caminho, sheet_name=SHEET_NAME)
-    return int(df['UO_COD'].notna().sum())
 
 
 def senha_expirada(em):
@@ -110,6 +58,42 @@ def senha_expirada(em):
     return 'SENHA EXPIRADA' in tela.upper()
 
 
+def encerrar_emulador(em):
+    """Encerra o emulador ignorando falhas.
+
+    Se a sessao ja caiu o terminate() estoura, e isso nao pode impedir o que
+    vem depois dele — devolver as planilhas, gravar o resultado na aba ROBO.
+    """
+    if em is None:
+        return
+    try:
+        em.terminate()
+    except Exception as e:
+        print(f"[aviso] falha ao encerrar o emulador (ignorando): {e}")
+
+
+def encerrar_sem_envio(codigo, motivo, em=None):
+    """Sai do robo ANTES de qualquer envio ao SIAFI, devolvendo as planilhas.
+
+    O consolida.py ja tirou as planilhas da pasta de origem. Como nada foi
+    enviado, elas precisam voltar para a fila: sem isso a pessoa resolve o
+    problema (VPN, senha, dotacao, coluna vazia), aciona de novo e recebe
+    'NENHUMA PLANILHA ENCONTRADA PARA PROCESSAR'. Antes so a reprovacao na
+    analise de saldo devolvia; as outras saidas deixavam tudo em Realizados.
+    """
+    if devolver_planilhas_de_origem(MOVIDOS_PATH):
+        aviso = (f'{motivo}: NENHUMA solicitação foi enviada ao SIAFI. As '
+                 'planilhas voltaram para a pasta de origem — resolva o '
+                 'problema apontado e acione de novo.')
+    else:
+        aviso = (f'{motivo}: NENHUMA solicitação foi enviada ao SIAFI. Não '
+                 'consegui devolver as planilhas para a pasta de origem; veja '
+                 'em Realizados antes de acionar de novo.')
+    relato('aviso', aviso)
+    encerrar_emulador(em)
+    sys.exit(codigo)
+
+
 def abortar_senha_expirada(em):
     """Encerra o robo explicando o que fazer. Codigo 3, tratado no robo.ps1."""
     print()
@@ -118,17 +102,90 @@ def abortar_senha_expirada(em):
     print("Apos isso, salve a nova senha no arquivo .env e execute o script novamente.")
     print("=" * 70)
     relato('erro', 'Senha do SIAFI expirada. Atualize a senha no SIAFI '
-                   'manualmente, grave a nova no .env e acione de novo. '
-                   'Nada foi enviado ao SIAFI.')
-    em.terminate()
-    sys.exit(3)
+                   'manualmente e grave a nova no .env.')
+    encerrar_sem_envio(3, 'Senha expirada', em)
+
+
+def abortar_login(em):
+    """O SIAFI nao chegou a tela esperada depois de varias tentativas.
+
+    Antes o robo so imprimia o aviso, encerrava o emulador e SEGUIA: a linha
+    seguinte digitava num emulador morto e o grupo recebia um traceback.
+    """
+    print("Não foi possível fazer login após várias tentativas.")
+    relato('erro', 'Não foi possível fazer login no SIAFI após várias '
+                   'tentativas. Confira usuário e senha no .env e se o SIAFI '
+                   'está no ar.')
+    encerrar_sem_envio(1, 'Login não concluído', em)
+
+
+def relatar_parada(em, erro, linha_planilha, uo):
+    """Explica ao grupo ONDE e POR QUE o envio parou no meio.
+
+    Das 83 execucoes ate 10/11/2026, 14 morreram com 'Keyboard locked' e nada
+    mais: o robo tentou digitar numa posicao protegida porque o SIAFI nao foi
+    para a tela esperada, e a mensagem do SIAFI — que diz o motivo — nunca
+    era lida. Aqui a tela inteira vai para o log e a linha 1 para o grupo.
+    """
+    tela = imprimir_tela(em, f'envio interrompido na linha {linha_planilha} '
+                             f'da planilha, UO {uo}')
+    print(f"  {type(erro).__name__}: {erro}")
+    mensagem = tela[0].strip() if tela else ''
+
+    if 'Keyboard locked' in str(erro):
+        causa = ('o SIAFI não foi para a tela esperada (em geral porque '
+                 'recusou os dados digitados)')
+    else:
+        causa = f'{type(erro).__name__}: {erro}'
+
+    texto = (f'O envio parou ao processar a linha {linha_planilha} da '
+             f'planilha (UO {uo}): {causa}.')
+    if mensagem:
+        texto += f' O SIAFI mostrava: "{mensagem}".'
+
+    sem_resposta = resultado.confirmacao_sem_resposta()
+    if sem_resposta:
+        texto += (f' A confirmação do documento da UO {sem_resposta} já tinha '
+                  'sido enviada e o robô não leu a resposta: confira no SIAFI '
+                  'se ele foi registrado.')
+
+    if tela:
+        texto += ' A tela completa do SIAFI está no log (/log).'
+    relato('erro', texto)
+
+
+def planilhas_apos_parada():
+    """O envio parou no meio: as planilhas de origem voltam para a fila?
+
+    So quando e CERTO que nada foi registrado, isto e, quando nenhuma
+    confirmacao (o PF5 do finalizar_documento) chegou a ser enviada nesta
+    execucao. Linha digitada e nao confirmada nao vira documento no SIAFI.
+
+    Com alguma confirmacao ja enviada — documento registrado, recusado ou sem
+    resposta lida — elas ficam em Realizados: devolver faria o proximo
+    acionamento reenviar tudo, inclusive o que ja esta no SIAFI.
+    """
+    if resultado.houve_confirmacao():
+        relato('aviso', 'As planilhas de origem ficaram em Realizados, porque '
+                        'já houve documento confirmado ou recusado nesta '
+                        'execução. Confira no SIAFI e reenvie só o que faltou.')
+    elif devolver_planilhas_de_origem(MOVIDOS_PATH):
+        relato('aviso', 'Nenhum documento chegou a ser confirmado no SIAFI, '
+                        'então as planilhas voltaram para a pasta de origem — '
+                        'resolva o problema apontado e acione de novo.')
+    else:
+        relato('aviso', 'Nenhum documento chegou a ser confirmado no SIAFI, '
+                        'mas não consegui devolver as planilhas para a pasta '
+                        'de origem; veja em Realizados antes de acionar de '
+                        'novo.')
+
 
 # ---------------------------------------------------------------------------
 # Etapa 1 — Consolidação das planilhas
 # ---------------------------------------------------------------------------
 try:
     subprocess.run(
-        ['python3', os.path.join(DIR_SCRIPTS, 'consolida.py')],
+        [sys.executable, os.path.join(DIR_SCRIPTS, 'consolida.py')],
         check=True
     )
 except subprocess.CalledProcessError:
@@ -144,9 +201,7 @@ except subprocess.CalledProcessError:
                    'Use /log para o relatório completo.')
     sys.exit(1)
 
-relato('planilha', 'Planilhas consolidadas, validação OK.')
-
-CAMINHO_LOCAL = os.path.realpath(os.path.join(DIR_SCRIPTS, '..', 'data', 'copia.xlsm'))
+relato('planilha', 'Planilhas consolidadas.')
 
 # ---------------------------------------------------------------------------
 # Etapa 2 — Recálculo das fórmulas
@@ -159,18 +214,43 @@ CAMINHO_LOCAL = os.path.realpath(os.path.join(DIR_SCRIPTS, '..', 'data', 'copia.
 # ---------------------------------------------------------------------------
 print()
 print("Recalculando as fórmulas da planilha no Excel...")
-if not recalcular_no_excel(CAMINHO_LOCAL):
-    relato('erro', 'Não consegui fazer o Excel recalcular a planilha. A aba '
-                   'ROBO é toda derivada por fórmula e ficaria vazia, então o '
-                   'robô parou antes de tocar no SIAFI.')
-    sys.exit(1)
+_erro_excel = recalcular_no_excel(CAMINHO_LOCAL)
+if _erro_excel:
+    # A aba ROBO e toda derivada por formula: sem o recalculo ela fica vazia.
+    relato('erro', 'Não consegui fazer o Excel recalcular a planilha, então o '
+                   'robô parou antes de tocar no SIAFI. Motivo: '
+                   f'{_erro_excel[:400].rstrip(".")}.')
+    encerrar_sem_envio(1, 'Planilha não recalculada')
 
-_prontas = linhas_prontas(CAMINHO_LOCAL)
+hoje = datetime.today()
+LINHAS, _problemas = ler_linhas(
+    pd.read_excel(CAMINHO_LOCAL, sheet_name=SHEET_NAME), hoje)
+_prontas = len(LINHAS)
 if _prontas == 0:
     relato('erro', 'A aba ROBO ficou vazia depois do recálculo. Confira se a '
-                   'aba PREENCHER AQUI foi realmente preenchida. Nada foi '
-                   'enviado ao SIAFI.')
-    sys.exit(1)
+                   'aba PREENCHER AQUI foi realmente preenchida — e, na '
+                   'máquina do robô, se não há um Excel aberto segurando o '
+                   'copia.xlsm.')
+    encerrar_sem_envio(1, 'Planilha sem linhas')
+
+# Validacao de TODAS as linhas antes do login: linha com defeito descoberta no
+# meio do laco deixava documento aberto pela metade no SIAFI.
+if _problemas:
+    print()
+    print("=" * 70)
+    print("  LINHAS COM PROBLEMA NA PLANILHA — PROCESSO NÃO PODE CONTINUAR")
+    print("=" * 70)
+    for p in _problemas:
+        print(f"  - {p}")
+    print("=" * 70)
+    print()
+    _LIMITE = 8
+    _detalhes = [f'- {p}' for p in _problemas[:_LIMITE]]
+    if len(_problemas) > _LIMITE:
+        _detalhes.append(f'- ... e mais {len(_problemas) - _LIMITE}, veja /log')
+    relato('erro', 'Linhas com problema na planilha:\n' + '\n'.join(_detalhes))
+    encerrar_sem_envio(2, 'Planilha reprovada na validação')
+
 print(f"{_prontas} linha(s) prontas na aba ROBO.")
 # Sem o campo 'linhas': aqui o robo sabe a contagem, nao quais linhas
 # sao — diferente do robo de cota, que lista os numeros.
@@ -179,8 +259,6 @@ relato('pendentes', f'{_prontas} linha(s) a processar')
 # ---------------------------------------------------------------------------
 # Etapa 3 — Login no SIAFI (uma sessão só, usada tambem pela analise)
 # ---------------------------------------------------------------------------
-agora = datetime.now()
-
 hora_atual = datetime.now().strftime("%H:%M:%S")
 print(f'Inicio do processo: {hora_atual}')
 
@@ -189,31 +267,35 @@ usuario = os.getenv('USUARIO')
 senha = os.getenv('SENHA')
 unidade_executora = os.getenv('UNIDADE_EXECUTORA')
 
-day = datetime.today().strftime("%d")
-month = datetime.today().strftime("%m")
-year = datetime.today().strftime("%Y")
-
 em = None
+_ultimo_motivo = None
 for _tentativa in range(1, CONEXAO_TENTATIVAS + 1):
-    em = Emulator(visible=SIAFI_VISIVEL)
-    em.connect('bhmvsb.prodemge.gov.br')
-    em.wait_for_field()
+    # O try cobre o Emulator()/connect() e nao so a tela de recusa: com a VPN
+    # fora do ar a excecao estoura antes de haver tela para ler, e subia como
+    # traceback cru, sem motivo nenhum para o grupo.
+    try:
+        em = Emulator(visible=SIAFI_VISIVEL)
+        em.connect(SIAFI_HOST)
+        em.wait_for_field()
 
-    if not em.string_found(1, 2, 'UNABLE TO ESTABLISH SESSION'):
-        break
+        if not em.string_found(1, 2, 'UNABLE TO ESTABLISH SESSION'):
+            break
+        _ultimo_motivo = 'o servidor recusou a sessao (UNABLE TO ESTABLISH SESSION)'
+    except Exception as e:
+        _ultimo_motivo = f'{type(e).__name__}: {e}'
 
-    print(f"Tentativa {_tentativa}/{CONEXAO_TENTATIVAS}: o servidor recusou a "
-          "sessao (UNABLE TO ESTABLISH SESSION). Tentando novamente...")
-    em.terminate()
+    print(f"Tentativa {_tentativa}/{CONEXAO_TENTATIVAS} de conectar falhou: "
+          f"{_ultimo_motivo}")
+    encerrar_emulador(em)
     em = None
     time.sleep(1)
 else:
     print()
-    print(f"Nao foi possivel conectar ao SIAFI apos {CONEXAO_TENTATIVAS} tentativas.")
     relato('erro',
            f'Nao foi possivel conectar ao SIAFI apos {CONEXAO_TENTATIVAS} tentativas.\n'
+           f'Ultimo motivo: {_ultimo_motivo}\n'
            'Verifique se a VPN esta conectada e se nao ha sessao anterior aberta.')
-    sys.exit(1)
+    encerrar_sem_envio(1, 'Sem conexão com o SIAFI')
 
 # Preenche os dados de login
 em.fill_field(19, 13, sistema, 8)
@@ -258,8 +340,7 @@ while tentativas < max_tentativas:
         abortar_senha_expirada(em)
 
 if tentativas == max_tentativas:
-    print("Não foi possível fazer login após várias tentativas.")
-    em.terminate()
+    abortar_login(em)
 
 em.fill_field(1, 2, sistema, 4)
 em.send_enter()
@@ -292,8 +373,7 @@ while tentativas < max_tentativas:
     tentativas += 1
 
 if tentativas == max_tentativas:
-    print("Não foi possível fazer login após várias tentativas.")
-    em.terminate()
+    abortar_login(em)
 
 #Entrar com a Unidade Executora
 em.fill_field(22, 30, unidade_executora, 7)
@@ -313,7 +393,17 @@ print()
 print("Iniciando a análise de saldo das dotações...")
 print()
 
-if analise_saldo.analisar(em) != 0:
+try:
+    _saldo_reprovado = analise_saldo.analisar(em) != 0
+except Exception as e:
+    # A analise so consulta: se ela quebrar, nada foi enviado ainda.
+    print(f"[erro] a análise de saldo quebrou: {type(e).__name__}: {e}")
+    imprimir_tela(em, 'análise de saldo interrompida')
+    relato('erro', f'A análise de saldo não terminou '
+                   f'({type(e).__name__}: {e}).')
+    encerrar_sem_envio(1, 'Análise de saldo interrompida', em)
+
+if _saldo_reprovado:
     print()
     print("=" * 70)
     print("  PROCESSO INTERROMPIDO NA ANÁLISE DE SALDO")
@@ -321,19 +411,7 @@ if analise_saldo.analisar(em) != 0:
     print("  Nenhuma solicitação foi enviada ao SIAFI.")
     print("=" * 70)
     print()
-    devolvidos = devolver_planilhas_de_origem(
-        os.path.realpath(os.path.join(DIR_SCRIPTS, '..', 'data', '.movidos')))
-    if devolvidos:
-        aviso = ('Análise de saldo reprovada: NENHUMA solicitação foi enviada ao '
-                 'SIAFI. As planilhas voltaram para a pasta de origem — corrija '
-                 'as dotações acima e acione de novo.')
-    else:
-        aviso = ('Análise de saldo reprovada: NENHUMA solicitação foi enviada ao '
-                 'SIAFI. Não consegui devolver as planilhas para a pasta de '
-                 'origem; veja em Realizados antes de acionar de novo.')
-    relato('aviso', aviso)
-    em.terminate()
-    sys.exit(2)
+    encerrar_sem_envio(2, 'Análise de saldo reprovada', em)
 
 # A analise deixou o terminal nas telas de consulta. Voltar ao ponto de partida
 # do laco de solicitacoes e obrigatorio: digitar numa tela errada do SIAFI e o
@@ -342,8 +420,7 @@ if not analise_saldo.voltar_ao_menu(em):
     relato('erro', 'Não consegui voltar ao menu do SIAFI depois da análise de '
                    'saldo. O robô parou por segurança, antes de enviar '
                    'qualquer solicitação.')
-    em.terminate()
-    sys.exit(1)
+    encerrar_sem_envio(1, 'Menu do SIAFI não encontrado', em)
 
 print("Análise de saldo aprovada. Iniciando as solicitações no SIAFI...")
 print()
@@ -351,50 +428,15 @@ print()
 # ---------------------------------------------------------------------------
 # Etapa 5 — Solicitações
 # ---------------------------------------------------------------------------
-df = pd.read_excel(CAMINHO_LOCAL, sheet_name=SHEET_NAME)
-df = df.dropna(how='all')
-df = df.reset_index(drop=False)
-
 # Definição de variáveis para controle do fluxo
 verifica_tipo = 0
 conclusao = 0
 linha = 11
+linha_planilha = None   # linha da planilha em processamento, para o diagnostico
 
 try:
-    # Loop para processar cada linha da planilha
-    for idx, row in df.iterrows():
-
-            # Pula linhas onde UO_COD está vazio (fim da planilha ou linha vazia)
-        if pd.isna(row['UO_COD']):
-            continue
-
-        
-        data_row = {}
-        data_row['month']   = month
-        data_row['day']     = day
-        data_row['year']    = year
-        data_row['orientacao']    = str(row['ORIENTACAO']).strip()
-        data_row['uo']            = str(int(row['UO_COD']))
-        data_row['acao']          = str(int(row['ACAO_COD']))
-        data_row['funcao']        = str(int(row['FUNCAO_COD'])).zfill(2) 
-        data_row['subfuncao']     = str(int(row['SUBFUNCAO_COD'])).zfill(3) 
-        data_row['programa']      = str(int(row['PROGRAMA_COD'])).zfill(3) 
-        data_row['subprojeto']    = str(int(row['SUBPROJETO_COD']))
-        data_row['categoria']     = str(int(row['CATEGORIA_COD']))
-        data_row['grupo']         = str(int(row['GRUPO_COD']))
-        data_row['modalidade']    = str(int(row['MODALIDADE_COD']))
-        data_row['elemento']      = str(int(row['ELEMENTO_COD'])).zfill(2) 
-        data_row['iag']           = str(int(row['IPG_COD']))
-        data_row['fonte']         = str(int(row['FONTE_COD'])).zfill(2) 
-        data_row['procedencia']   = str(int(row['IPU_COD']))
-
-        if data_row['orientacao'] == 'Anular': # se for anulação, o valor deve ser multiplicado por -1 para ficar negativo
-            data_row['valor']      = str(-int(round(row['VALOR'])))
-        else:
-            data_row['valor']      = str(int(round(row['VALOR'])))
-
-        data_row['uo_suplementada'] = str(int(row['UO_SUPLEMENTADA'])) if pd.notna(row['UO_SUPLEMENTADA']) else '0'
-        data_row['tipo']          = str(int(row['TIPO']))
+    # As linhas ja chegam convertidas e validadas (ver linhas.py)
+    for linha_planilha, data_row in LINHAS:
 
         retorno = ''
 
@@ -421,10 +463,7 @@ try:
         uo_anterior = data_row['uo']  # armazena a UO da linha atual para comparação na próxima iteração
         orientacao_anterior = data_row['orientacao']  # armazena a orientação da linha atual para comparação na próxima iteração
         verifica_tipo = data_row['tipo']  # armazena a orientação da linha atual para comparação na próxima iteração
-        resultado.marcar_linha(int(row['index']) + 2)  # última linha que entrou no documento em aberto
-
-    ##    if data_row['tipo'] == '999':
-    ##        break
+        resultado.marcar_linha(linha_planilha)  # última linha que entrou no documento em aberto
 
     ### Conclui última linha processada, aguardando mensagem de sucesso e pegando o número do documento
     if linha == 21:
@@ -437,11 +476,19 @@ try:
     print()
     relato('fim', 'Fluxo concluído.')
 
+except Exception as e:
+    # TelaDesconhecida: o finalizar_documento ja explicou o motivo ao grupo
+    # (e ja tirou o print da tela) antes de levantar.
+    if not isinstance(e, TelaDesconhecida):
+        relatar_parada(em, e, linha_planilha, data_row['uo'])
+    planilhas_apos_parada()
+    raise
+
 finally:
     hora_atual = datetime.now().strftime("%H:%M:%S")
     print(f'Fim do processo: {hora_atual}')
 
-    em.terminate()
+    encerrar_emulador(em)
 
     # Grava o desfecho de cada documento na aba ROBO (colunas U e V)
     resultado.gravar(CAMINHO_LOCAL)
@@ -467,10 +514,8 @@ finally:
             shutil.move(origem, destino)
             print(f"Arquivo anterior movido para: {destino}")
 
-    hoje = datetime.today().strftime("%d.%m")
-    novo_nome = f'Conferencia arquivo robo {hoje}.xlsm'
+    novo_nome = f'Conferencia arquivo robo {datetime.today().strftime("%d.%m")}.xlsm'
     destino_copia = os.path.join(conferencia_folder, novo_nome)
     shutil.copyfile(CAMINHO_LOCAL, destino_copia)
     relato('planilha_final',
            f'Cópia de conferência salva em: {destino_copia}', arquivo=novo_nome)
-    print(f"Cópia de conferência salva em: {destino_copia}")

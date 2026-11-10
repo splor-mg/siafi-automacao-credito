@@ -3,12 +3,21 @@ import time
 
 import resultado
 from relato import relato
+from tela import imprimir_tela
 
 MSG_REGISTRO_EFETUADO = "0011-REGISTRO EFETUADO."
 MSG_INCONSISTENCIA = 'Inconsistencia no Registro da Contabilizacao'
 
 MOTIVO_SALDO_CONTABIL = "Erro de saldo contábil"
 MOTIVO_GENERICO = "Erro"
+
+
+class TelaDesconhecida(RuntimeError):
+    """O terminal nao voltou ao menu depois de uma recusa.
+
+    Classe propria para o login.py distinguir esta parada — que ja foi
+    explicada ao grupo — de uma falha inesperada no meio do envio.
+    """
 
 
 def recusa_de_anulacao(tela):
@@ -75,6 +84,9 @@ def finalizar_documento(em, uo, uo_anterior, data_row):
     em.send_enter()
     em.wait_for_field()
 
+    # Ate aqui nada foi registrado. Do PF5 em diante o SIAFI pode ter
+    # registrado o documento, mesmo que o robo quebre antes de ler a tela.
+    resultado.confirmacao_enviada(uo_anterior)
     em.send_pf(5)
     em.wait_for_field()
     em.send_pf(5)
@@ -111,6 +123,9 @@ def finalizar_documento(em, uo, uo_anterior, data_row):
         # dizer qual era o problema.
         tela = em.string_get(1, 1, 80).strip()
         print(f"  tela do SIAFI: {tela}")
+        # A tela inteira, antes de sair dela: a linha 1 nem sempre conta a
+        # historia toda (a inconsistencia contabil, por exemplo, vem na 4).
+        imprimir_tela(em, f'documento da UO {uo_anterior} recusado')
         if sem_saldo_de_cota(tela):
             print("  O crédito existe, mas está preso em cota aprovada e "
                   "ainda não empenhada.")
@@ -162,10 +177,11 @@ def _voltar_ao_menu_depois_da_recusa(em, uo_anterior):
     if voltar_ao_menu(em):
         return
 
+    imprimir_tela(em, f'sem voltar ao menu depois da recusa da UO {uo_anterior}')
     relato('erro',
            f'O SIAFI recusou o documento da UO {uo_anterior} e o robô não '
            f'conseguiu voltar ao menu depois disso. Parei antes de enviar os '
            f'documentos seguintes, para não digitar numa tela errada do SIAFI. '
            f'Confira essa UO no SIAFI antes de acionar de novo.')
-    raise RuntimeError(
+    raise TelaDesconhecida(
         f'Terminal em tela desconhecida depois da recusa da UO {uo_anterior}')

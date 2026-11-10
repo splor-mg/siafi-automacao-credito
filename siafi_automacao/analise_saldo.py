@@ -1,15 +1,19 @@
 """
 Análise de saldo das dotações do arquivo consolidado (copia.xlsm).
 
-Executado pelo login.py logo após a confirmação do usuário no Excel.
+O login.py chama analisar(em) com o emulador já logado, depois de validar as
+linhas e antes de enviar qualquer solicitação.
 
-Regra de saída:
-    exit 0  -> todas as dotações a anular têm saldo suficiente
-    exit 1  -> pelo menos uma dotação está inexistente, com saldo insuficiente
-               ou não pôde ser lida
+Retorno de analisar():
+    0  -> todas as dotações a anular têm saldo suficiente
+    1  -> pelo menos uma dotação está inexistente, com saldo insuficiente
+          ou não pôde ser lida
 
-O login.py trata o exit 1 abortando o processo antes de enviar qualquer
-solicitação ao SIAFI.
+Com 1, o login.py interrompe o processo antes de enviar qualquer solicitação
+ao SIAFI e devolve as planilhas para a pasta de origem.
+
+Também roda sozinho (python siafi_automacao/analise_saldo.py), abrindo a
+própria sessão, para conferir o copia.xlsm sem enviar nada.
 """
 
 import os
@@ -20,6 +24,7 @@ from datetime import datetime
 import pandas as pd
 
 from relato import relato
+from tela import imprimir_tela
 from dotenv import load_dotenv
 from py3270 import Emulator
 
@@ -199,6 +204,7 @@ def consultar_dotacao(em, data_row):
         saldo_str = saldo_raw.split()[-1]
         saldo = float(saldo_str.replace('.', '').replace(',', '.'))
     except (ValueError, IndexError):
+        imprimir_tela(em, f"saldo ilegível na consulta da UO {data_row['uo']}")
         voltar_para_dotacao(em)
         return 'ERRO DE LEITURA', None, f"saldo lido: {saldo_raw!r}"
 

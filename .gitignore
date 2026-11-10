@@ -12,7 +12,7 @@ data/*.csv
 data/copia.xlsm
 !data/modelo.xlsm
 
-# Sentinela gerada pelo setup_credito.sh (uma por maquina)
+# Sentinela que versoes antigas do setup.sh geravam (uma por maquina)
 .setup_done
 
 ### Python ###

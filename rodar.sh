@@ -5,9 +5,11 @@
 # do Telegram, para que os dois caminhos executem exatamente a mesma coisa.
 #
 # Codigos de saida:
-#   0   sucesso (ou cancelado na conferencia manual)
+#   0   o robo foi ate o fim (pode haver documento recusado: veja o resumo)
 #   1   falha
-#   2   interrompido na analise de saldo — nada foi enviado ao SIAFI
+#   2   interrompido antes do envio (validacao da planilha ou analise de
+#       saldo) — nada foi enviado ao SIAFI e as planilhas voltaram a fila
+#   3   senha do SIAFI expirada — nada foi enviado ao SIAFI
 #   10  ja existe uma execucao em andamento (lock tomado)
 #
 # Sem '-e' de proposito: a falha do 'git pull' precisa apenas avisar e seguir

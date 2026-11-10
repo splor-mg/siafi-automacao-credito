@@ -12,7 +12,7 @@ echo ""
 # -------------------------------------------------------------------
 # 1. Dependências do sistema
 # -------------------------------------------------------------------
-echo "[1/6] Instalando dependências do sistema..."
+echo "[1/5] Instalando dependências do sistema..."
 sudo apt-get update -q
 sudo apt-get install -y --no-install-recommends \
     s3270 x3270 \
@@ -23,7 +23,7 @@ sudo apt-get install -y --no-install-recommends \
 # 2. Clone do repositório (filesystem Linux — melhor performance que /mnt/c/)
 # -------------------------------------------------------------------
 echo ""
-echo "[2/6] Clonando repositório..."
+echo "[2/5] Clonando repositório..."
 if [ ! -d "$REPO_DIR/.git" ]; then
     mkdir -p "$HOME/code/splor-mg"
 
@@ -47,7 +47,7 @@ fi
 # 3. Ambiente virtual Python + dependências
 # -------------------------------------------------------------------
 echo ""
-echo "[3/6] Configurando ambiente virtual Python..."
+echo "[3/5] Configurando ambiente virtual Python..."
 cd "$REPO_DIR"
 
 if [ ! -d "venv" ]; then
@@ -59,16 +59,16 @@ pip install --quiet -r requirements.txt
 echo "Dependências Python instaladas."
 
 # -------------------------------------------------------------------
-# 4. Aviso WSLg (necessário para visible=True no x3270)
+# 4. Aviso WSLg (necessário para a janela gráfica do x3270)
 # -------------------------------------------------------------------
 echo ""
-echo "[4/6] Verificando suporte a interface gráfica (WSLg)..."
+echo "[4/5] Verificando suporte a interface gráfica (WSLg)..."
 if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     echo ""
     echo "AVISO: WSLg não detectado nesta sessão."
-    echo "O login.py e o analise_saldo.py usam Emulator(visible=True), que abre a"
-    echo "janela gráfica do x3270. Se o robô falhar ao abrir a janela, altere"
-    echo "visible=True para visible=False nos dois arquivos para rodar sem interface."
+    echo "Por padrão o robô abre a janela gráfica do x3270. Se ele falhar ao abrir"
+    echo "a janela, acrescente SIAFI_VISIVEL=false ao arquivo .env para rodar sem"
+    echo "interface (modo s3270)."
     echo ""
 else
     echo "WSLg disponível (DISPLAY=$DISPLAY)."
@@ -78,7 +78,7 @@ fi
 # 5. Variáveis de ambiente (.env)
 # -------------------------------------------------------------------
 echo ""
-echo "[5/6] Configurando variáveis de ambiente..."
+echo "[5/5] Configurando variáveis de ambiente..."
 
 # Detectar usuário Windows para sugerir o caminho padrão do OneDrive
 _win_user=$(cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r\n' || true)
@@ -130,30 +130,14 @@ if ! grep -q "^ONEDRIVE_BASE=" .env 2>/dev/null; then
     echo "ONEDRIVE_BASE salvo."
 fi
 
-if ! grep -q "^PASTA_LOCAL=" .env 2>/dev/null; then
-    _novas_vars=true
-    _local_padrao="$HOME/siafi-trabalho-credito"
-    echo ""
-    echo "Pasta local (Linux) para cópia temporária dos arquivos durante a execução:"
-    read -rp "  PASTA_LOCAL [Enter para usar $_local_padrao]: " PASTA_LOCAL
-    PASTA_LOCAL="${PASTA_LOCAL:-$_local_padrao}"
-    printf 'PASTA_LOCAL=%s\n' "$PASTA_LOCAL" >> .env
-    echo "PASTA_LOCAL salvo."
-fi
-
 if [ "$_novas_vars" = false ]; then
     echo ".env completo — mantendo variáveis existentes."
 fi
 
-# -------------------------------------------------------------------
-# 6. Sentinela
-# -------------------------------------------------------------------
-echo ""
-echo "[6/6] Marcando setup como concluído..."
-touch "$REPO_DIR/.setup_done"
-
 echo ""
 echo "============================================================"
-echo "  Configuração concluída! O robô será iniciado em seguida."
+echo "  Configuração concluída!"
+echo "  Para rodar: duplo-clique no robo_credito.bat (Windows)"
+echo "  ou 'bash rodar.sh' dentro do WSL."
 echo "============================================================"
 echo ""

@@ -8,6 +8,10 @@ def tipo_1(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
     while True:
   
         if uo_anterior != data_row['uo']:
+            # Documento novo comeca na primeira linha da tela. Sem isto a UO
+            # seguinte herdava a posicao da anterior (os tipos 2 e 4 ja
+            # zeravam; aqui so a troca de orientacao zerava, por acaso).
+            linha = 11
             print("Realizando procedimento Tipo 1")
 
             if uo_anterior != 0:

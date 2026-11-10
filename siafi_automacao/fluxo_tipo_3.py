@@ -8,6 +8,10 @@ def tipo_3(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
     while True:
   
         if uo_anterior != data_row['uo']:
+            # Documento novo comeca na primeira linha da tela. Sem isto a UO
+            # seguinte herdava a posicao da anterior (os tipos 2 e 4 ja
+            # zeravam; aqui so a troca de orientacao zerava, por acaso).
+            linha = 11
             print("Realizando procedimento Tipo 3")
 
             if uo_anterior != 0:
@@ -106,6 +110,8 @@ def tipo_3(em, data_row, uo_anterior, orientacao_anterior, linha, conclusao):
             em.fill_field(linha, 64, data_row['valor'], 15) # valor
 
         elif data_row['orientacao'] == 'Anular':
+            # Guarda: este tipo so suplementa, e o linhas.py reprova a
+            # planilha antes do envio se vier anulacao aqui.
             break
 
 

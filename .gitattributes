@@ -1,0 +1,4 @@
+# O robo_credito.bat e executado pelo cmd.exe direto da pasta do WSL
+# (\\wsl.localhost\...). Com fim de linha LF o cmd perde caracteres depois do
+# 'chcp 65001' e reclama: "'itle' nao e reconhecido como um comando interno".
+*.bat text eol=crlf

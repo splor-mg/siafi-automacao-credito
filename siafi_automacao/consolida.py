@@ -1,13 +1,14 @@
 import os
 import sys
 import shutil
-from relato import relato
-
 
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from dotenv import load_dotenv
+
+from arquivos import devolver_planilhas_de_origem
+from relato import relato
 
 load_dotenv()
 BASE = os.getenv('ONEDRIVE_BASE')
@@ -27,13 +28,6 @@ XLSM_PATH = os.path.join(DATA_DIR, 'copia.xlsm')
 MOVIDOS_PATH = os.path.join(DATA_DIR, '.movidos')
 
 SHEET_ENTRADA = 'PREENCHER AQUI'
-
-folder_paths = [
-    os.path.join(BASE, 'Remanejamentos'),
-    os.path.join(BASE, 'Remanejamentos (SEGOV_DCAF_FONTE 95_ FONTE 80)'),
-]
-output_file = os.path.join(BASE, 'Robo', 'copia.xlsx')
-processed_folder = os.path.join(BASE, 'Realizados')
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +71,16 @@ def destino_sem_colisao(pasta, filename):
     return destino
 
 
+def e_planilha_de_origem(nome):
+    """E um .xlsm de verdade, e nao o arquivo de trava do Excel?
+
+    Com a planilha aberta o Excel cria ao lado dela um '~$nome.xlsm', que nao
+    e planilha: a leitura dele falhava e derrubava a consolidacao inteira com
+    um erro que nao dizia nada a quem estava no grupo.
+    """
+    return nome.lower().endswith('.xlsm') and not nome.startswith('~$')
+
+
 # ---------------------------------------------------------------------------
 # Fluxo principal
 # ---------------------------------------------------------------------------
@@ -95,6 +99,13 @@ def combine_excel_files(folder_paths, output_file, processed_folder):
     os.makedirs(processed_folder, exist_ok=True)
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
+    # Manifesto de uma execucao anterior nao vale para esta: se ficasse, uma
+    # devolucao poderia mexer em arquivos que ja foram enviados ao SIAFI.
+    try:
+        os.remove(MOVIDOS_PATH)
+    except OSError:
+        pass
+
     # -----------------------------------------------------------------------
     # 1. Leitura de TODOS os arquivos antes de mover qualquer um
     # -----------------------------------------------------------------------
@@ -106,7 +117,8 @@ def combine_excel_files(folder_paths, output_file, processed_folder):
             erros.append(f"Pasta não encontrada: {folder_path}")
             continue
 
-        xlsm_files = [f for f in os.listdir(folder_path) if f.endswith('.xlsm')]
+        xlsm_files = [f for f in os.listdir(folder_path)
+                      if e_planilha_de_origem(f)]
 
         for filename in sorted(xlsm_files):
             file_path = os.path.join(folder_path, filename)
@@ -182,25 +194,51 @@ def combine_excel_files(folder_paths, output_file, processed_folder):
     # -----------------------------------------------------------------------
     # 5. Só agora move os arquivos de origem para 'Realizados'
     # -----------------------------------------------------------------------
-    movidos = []
-    for file_path, filename, _ in lidos:
-        destino = destino_sem_colisao(processed_folder, filename)
-        shutil.move(file_path, destino)
-        movidos.append((destino, file_path))
-        print(f"Arquivo movido para: {destino}")
-
-    # Guarda de onde cada arquivo veio. Se a analise de saldo reprovar, nada
-    # foi enviado ao SIAFI e os originais precisam voltar para a fila — sem
-    # isto, a pessoa corrigiria a dotacao, acionaria de novo e receberia
-    # 'NENHUMA PLANILHA ENCONTRADA PARA PROCESSAR'.
+    #
+    # O manifesto guarda de onde cada arquivo veio. Se o robo parar antes de
+    # enviar qualquer coisa ao SIAFI, o login.py usa isto para devolver os
+    # originais para a fila — sem isso a pessoa corrigiria o problema,
+    # acionaria de novo e receberia 'NENHUMA PLANILHA ENCONTRADA PARA
+    # PROCESSAR'. Gravado arquivo a arquivo: se a movimentacao falhar no meio
+    # (planilha aberta no Excel), o que ja foi movido ainda esta registrado.
+    falha = None
     with open(MOVIDOS_PATH, 'w', encoding='utf-8') as f:
-        for destino, origem in movidos:
-            f.write(f'{destino}\t{origem}\n')
+        for file_path, filename, _ in lidos:
+            destino = destino_sem_colisao(processed_folder, filename)
+            try:
+                shutil.move(file_path, destino)
+            except OSError as e:
+                falha = f"{filename}: {e}"
+                break
+            f.write(f'{destino}\t{file_path}\n')
+            f.flush()
+            print(f"Arquivo movido para: {destino}")
+
+    if falha:
+        devolver_planilhas_de_origem(MOVIDOS_PATH)
+        abortar(
+            "NÃO CONSEGUI MOVER UMA PLANILHA PARA 'Realizados'",
+            [falha,
+             "Feche a planilha no Excel e acione de novo.",
+             "As que já tinham sido movidas voltaram para a pasta de origem."],
+        )
 
 
 if __name__ == '__main__':
+    if not BASE:
+        # Sem isto o os.path.join(None, ...) estourava um TypeError que nao
+        # dizia a ninguem o que estava faltando.
+        abortar(
+            "ONEDRIVE_BASE NÃO CONFIGURADO",
+            ["Defina ONEDRIVE_BASE no arquivo .env (pasta-raiz do robô de "
+             "crédito no OneDrive). Veja o .env.example."],
+        )
+
     combine_excel_files(
-        folder_paths=folder_paths,
-        output_file=output_file,
-        processed_folder=processed_folder,
+        folder_paths=[
+            os.path.join(BASE, 'Remanejamentos'),
+            os.path.join(BASE, 'Remanejamentos (SEGOV_DCAF_FONTE 95_ FONTE 80)'),
+        ],
+        output_file=os.path.join(BASE, 'Robo', 'copia.xlsx'),
+        processed_folder=os.path.join(BASE, 'Realizados'),
     )

@@ -8,10 +8,11 @@ def devolver_planilhas_de_origem(manifesto):
 
     O consolida.py move os .xlsm para 'Realizados' logo no inicio, antes de a
     analise de saldo rodar — protecao deliberada contra reprocessar arquivos e
-    duplicar documentos se o robo cair no meio das solicitacoes. Mas quando a
-    analise reprova, nada foi enviado ao SIAFI e os originais precisam voltar
-    para a fila: sem isso a pessoa corrige a dotacao, aciona de novo e recebe
-    'NENHUMA PLANILHA ENCONTRADA PARA PROCESSAR'.
+    duplicar documentos se o robo cair no meio das solicitacoes. Mas quando o
+    robo para ANTES de enviar qualquer coisa (validacao da planilha, falha de
+    conexao ou de login, analise de saldo reprovada), os originais precisam
+    voltar para a fila: sem isso a pessoa corrige o problema, aciona de novo e
+    recebe 'NENHUMA PLANILHA ENCONTRADA PARA PROCESSAR'.
 
     Le o manifesto gravado pelo consolida.py (uma linha por arquivo, no
     formato 'destino<TAB>origem') e desfaz cada movimentacao.
@@ -29,6 +30,12 @@ def devolver_planilhas_de_origem(manifesto):
 
     for destino, origem in pares:
         try:
+            if os.path.exists(origem):
+                # Alguem ja pos outro arquivo com esse nome na fila (a versao
+                # corrigida, provavelmente). Sobrescrever apagaria o trabalho
+                # da pessoa sem aviso; o original fica em Realizados.
+                print(f"[aviso] ja existe {origem}; mantive {destino} onde esta.")
+                continue
             if os.path.exists(destino):
                 os.makedirs(os.path.dirname(origem), exist_ok=True)
                 shutil.move(destino, origem)

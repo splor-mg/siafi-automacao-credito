@@ -72,3 +72,16 @@ def test_recria_a_pasta_de_origem_se_ela_sumiu(tmp_path):
 
     assert len(devolvidos) == 2
     assert origem.is_dir()
+
+
+def test_nao_sobrescreve_arquivo_que_ja_voltou_para_a_fila(tmp_path):
+    """Se alguem ja pos a versao corrigida na pasta de origem, devolver por
+    cima apagaria o trabalho da pessoa sem aviso."""
+    origem, realizados, manifesto = montar_cenario(tmp_path)
+    (origem / 'planilha A.xlsm').write_text('versao corrigida')
+
+    devolvidos = devolver_planilhas_de_origem(str(manifesto))
+
+    assert devolvidos == ['planilha B.xlsm']
+    assert (origem / 'planilha A.xlsm').read_text() == 'versao corrigida'
+    assert (realizados / 'planilha A.xlsm').exists()
